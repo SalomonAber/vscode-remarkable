@@ -1,6 +1,6 @@
 # reMarkable Preview
 
-Preview a local `.rmdoc` by rendering it with `reMder-client` and opening the cached PDF in VS Code's normal PDF editor.
+Preview a local `.rmdoc` in a first-class, read-only VS Code editor. The extension renders through `reMder-client`, caches the resulting PDF, and displays it with a bundled local PDF.js viewer; cache filenames stay an implementation detail.
 
 ## Requirements
 
@@ -18,7 +18,9 @@ Set `remarkablePreview.remderPath` when `reMder-client` is not on `PATH`. This i
 - **reMarkable: Open Preview to the Side**
 - **reMarkable: Refresh Preview**
 
-The commands are available from the Command Palette and from Explorer and editor menus for `.rmdoc` files. Refresh bypasses the selected document's current cache entry. Open previews are watched; when their source stabilizes after a change, the preview is reopened only when its actual content hash changed. The normal VS Code PDF editor has no in-place PDF-reload API, so the extension closes its previous generated-PDF tab and opens the replacement without creating repeated tabs.
+The extension also contributes **reMarkable Preview** to **Open With...** for `.rmdoc` files. Each preview remains identified by its source `.rmdoc` tab, including in multiple editor groups. Refresh rerenders the existing preview in place. Open previews are watched; when their source stabilizes after a change, the existing webview updates only when its actual content hash changed.
+
+The preview uses a restrictive webview policy: PDF.js and its worker are bundled with the extension, resources are exposed through VS Code webview URIs, and no network/CDN resources are used. In Remote SSH and similar windows the source, renderer, and cache remain on the remote extension host; VS Code transports the webview resources to the local UI.
 
 ## Cache
 
@@ -36,7 +38,7 @@ Diagnostics are recorded in the **reMarkable Preview** Output channel. In Remote
 
 ## VS Code API choices
 
-This extension uses current stable APIs: `commands.registerCommand` with `contributes.commands` and resource-filtered `contributes.menus`; `workspace.fs.readFile`; `ExtensionContext.globalStorageUri`; resource-scoped `workspace.getConfiguration`; and the built-in `vscode.open` command with `ViewColumn.Beside`. A future watcher should use `workspace.createFileSystemWatcher` rather than Node filesystem watching.
+This extension uses `CustomReadonlyEditorProvider` and the `customEditors` contribution for a binary, read-only `.rmdoc` preview. It also uses `workspace.fs.readFile`, `ExtensionContext.globalStorageUri`, resource-scoped configuration, and `workspace.createFileSystemWatcher`. `retainContextWhenHidden` preserves the viewer's in-webview scroll position across temporary tab switches.
 
 The extension declares `extensionKind: ["workspace"]`, so its child process, source path, and extension storage all live together on the local or remote workspace host. It does not implement synchronization, remote filesystems, authentication, `.rm` parsing, or PDF rendering.
 

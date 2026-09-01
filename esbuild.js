@@ -1,4 +1,5 @@
 const esbuild = require("esbuild");
+const fs = require("fs/promises");
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
@@ -42,11 +43,21 @@ async function main() {
 			esbuildProblemMatcherPlugin,
 		],
 	});
+	const media = await esbuild.context({
+		entryPoints: ['media/preview.ts'], bundle: true, format: 'iife', platform: 'browser',
+		minify: production, sourcemap: false, outfile: 'media/preview.js', logLevel: 'silent',
+	});
+	const copyWorker = () => fs.mkdir('media/pdfjs', { recursive: true }).then(() => fs.copyFile('node_modules/pdfjs-dist/build/pdf.worker.mjs', 'media/pdfjs/pdf.worker.mjs'));
 	if (watch) {
 		await ctx.watch();
+		await media.watch();
+		await copyWorker();
 	} else {
 		await ctx.rebuild();
+		await media.rebuild();
+		await copyWorker();
 		await ctx.dispose();
+		await media.dispose();
 	}
 }
 

@@ -13,12 +13,21 @@
     "Other"
   ],
   "activationEvents": [
+    "onCustomEditor:remarkablePreview.editor",
     "onCommand:remarkablePreview.openPreview",
     "onCommand:remarkablePreview.openPreviewToSide",
     "onCommand:remarkablePreview.refreshPreview"
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "customEditors": [
+      {
+        "viewType": "remarkablePreview.editor",
+        "displayName": "reMarkable Preview",
+        "selector": [{ "filenamePattern": "*.rmdoc" }],
+        "priority": "option"
+      }
+    ],
     "commands": [
       {
         "command": "remarkablePreview.openPreview",
@@ -41,18 +50,51 @@
     ],
     "menus": {
       "explorer/context": [
-        { "command": "remarkablePreview.openPreview", "when": "resourceExtname == .rmdoc", "group": "navigation@1" },
-        { "command": "remarkablePreview.openPreviewToSide", "when": "resourceExtname == .rmdoc", "group": "navigation@2" },
-        { "command": "remarkablePreview.refreshPreview", "when": "resourceExtname == .rmdoc", "group": "navigation@3" }
+        {
+          "command": "remarkablePreview.openPreview",
+          "when": "resourceExtname == .rmdoc",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remarkablePreview.openPreviewToSide",
+          "when": "resourceExtname == .rmdoc",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remarkablePreview.refreshPreview",
+          "when": "resourceExtname == .rmdoc",
+          "group": "navigation@3"
+        }
       ],
       "editor/title": [
-        { "command": "remarkablePreview.openPreview", "alt": "remarkablePreview.openPreviewToSide", "when": "resourceExtname == .rmdoc", "group": "navigation@1" },
-        { "command": "remarkablePreview.refreshPreview", "when": "resourceExtname == .rmdoc", "group": "navigation@2" }
+        {
+          "command": "remarkablePreview.openPreview",
+          "alt": "remarkablePreview.openPreviewToSide",
+          "when": "resourceExtname == .rmdoc",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remarkablePreview.refreshPreview",
+          "when": "resourceExtname == .rmdoc",
+          "group": "navigation@2"
+        }
       ],
       "editor/title/context": [
-        { "command": "remarkablePreview.openPreview", "when": "resourceExtname == .rmdoc", "group": "3_open@1" },
-        { "command": "remarkablePreview.openPreviewToSide", "when": "resourceExtname == .rmdoc", "group": "3_open@2" },
-        { "command": "remarkablePreview.refreshPreview", "when": "resourceExtname == .rmdoc", "group": "3_open@3" }
+        {
+          "command": "remarkablePreview.openPreview",
+          "when": "resourceExtname == .rmdoc",
+          "group": "3_open@1"
+        },
+        {
+          "command": "remarkablePreview.openPreviewToSide",
+          "when": "resourceExtname == .rmdoc",
+          "group": "3_open@2"
+        },
+        {
+          "command": "remarkablePreview.refreshPreview",
+          "when": "resourceExtname == .rmdoc",
+          "group": "3_open@3"
+        }
       ]
     },
     "configuration": {
@@ -95,16 +137,19 @@
     "test": "node --test out/test/*.test.js"
   },
   "devDependencies": {
-    "@types/vscode": "1.125.0",
     "@types/node": "24.x",
-    "typescript-eslint": "^8.61.1",
-    "eslint": "^10.5.0",
+    "@types/vscode": "1.125.0",
     "esbuild": "^0.28.1",
+    "eslint": "^10.5.0",
     "npm-run-all": "^4.1.5",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1"
   },
   "overrides": {
     "diff": "^8.0.4",
     "serialize-javascript": "^7.0.6"
+  },
+  "dependencies": {
+    "pdfjs-dist": "5.4.624"
   }
 }
