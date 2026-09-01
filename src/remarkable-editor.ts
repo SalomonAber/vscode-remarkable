@@ -2,13 +2,24 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { RenderCache, calculateCacheKeyForContentHash } from './cache';
 import { EditorController, isIncomingEditorMessage } from './editor-controller';
-import { hashContents, SourceFingerprintCache } from './fingerprint';
+import { hashContents, SourceFingerprintCache, SourceMetadata } from './fingerprint';
 import { RendererIdentityCache, renderSnapshot } from './renderer';
 
 export const REMARKABLE_EDITOR_VIEW_TYPE = 'remarkablePreview.editor';
+const SOURCE_POLL_INTERVAL_MS = 2_000;
 
 interface RemarkableDocument extends vscode.CustomDocument { readonly uri: vscode.Uri; }
-interface SourceState { controller: EditorController; watcher?: vscode.FileSystemWatcher; timer?: ReturnType<typeof setTimeout>; contentHash?: string; pdfPath?: string; }
+interface SourceState {
+	controller: EditorController;
+	watcher?: vscode.FileSystemWatcher;
+	timer?: ReturnType<typeof setTimeout>;
+	poller?: ReturnType<typeof setInterval>;
+	polling?: boolean;
+	missing?: boolean;
+	metadata?: SourceMetadata;
+	contentHash?: string;
+	pdfPath?: string;
+}
 
 export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProvider<RemarkableDocument>, vscode.Disposable {
 	private readonly sources = new Map<string, SourceState>();
@@ -68,8 +79,31 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 			const changed = () => this.schedule(source);
 			watcher.onDidChange(changed); watcher.onDidCreate(changed); watcher.onDidDelete(changed);
 			state.watcher = watcher;
+			state.poller = setInterval(() => { void this.poll(source); }, SOURCE_POLL_INTERVAL_MS);
 		}
 		return state;
+	}
+
+	private async poll(source: vscode.Uri): Promise<void> {
+		const state = this.sources.get(source.toString());
+		if (!state || state.polling) { return; }
+		state.polling = true;
+		try {
+			const metadata = await vscode.workspace.fs.stat(source);
+			const previous = state.metadata;
+			const changed = state.missing || (previous !== undefined && (previous.size !== metadata.size || previous.mtime !== metadata.mtime));
+			state.metadata = metadata;
+			state.missing = false;
+			if (changed) { this.schedule(source); }
+		} catch (error) {
+			if (!state.missing) {
+				state.missing = true;
+				state.metadata = undefined;
+				this.schedule(source);
+			}
+		} finally {
+			state.polling = false;
+		}
 	}
 
 	private schedule(source: vscode.Uri): void {
@@ -85,9 +119,16 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 		const generation = state.controller.begin(); state.controller.loading();
 		try {
 			if (force) { this.fingerprints.forget(source.toString()); }
-			const fingerprint = await this.fingerprints.get(source.toString(), await vscode.workspace.fs.stat(source), async () => vscode.workspace.fs.readFile(source));
+			const metadata = await vscode.workspace.fs.stat(source);
+			state.metadata = metadata;
+			state.missing = false;
+			const fingerprint = await this.fingerprints.get(source.toString(), metadata, async () => vscode.workspace.fs.readFile(source));
 			this.log(fingerprint.reused ? 'content hash reused from fingerprint' : 'content rehashed', source);
-			if (!force && state.contentHash === fingerprint.contentHash) { this.log('source unchanged after event', source); return; }
+			if (!force && state.contentHash === fingerprint.contentHash) {
+				this.log('source unchanged after event', source);
+				if (state.pdfPath) { state.controller.pdf(generation, state.pdfPath); }
+				return;
+			}
 			const executable = vscode.workspace.getConfiguration('remarkablePreview', source).get<string>('remderPath', 'reMder-client');
 			const identity = await this.identities.get(executable);
 			let contentHash = fingerprint.contentHash;
@@ -120,7 +161,7 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 		}
 	}
 
-	private stop(source: vscode.Uri): void { const state = this.sources.get(source.toString()); if (!state) { return; } if (state.timer) { clearTimeout(state.timer); } state.watcher?.dispose(); this.sources.delete(source.toString()); }
+	private stop(source: vscode.Uri): void { const state = this.sources.get(source.toString()); if (!state) { return; } if (state.timer) { clearTimeout(state.timer); } if (state.poller) { clearInterval(state.poller); } state.watcher?.dispose(); this.sources.delete(source.toString()); }
 	private log(message: string, source?: vscode.Uri): void { this.output.appendLine(`${new Date().toISOString()} ${message}${source ? `: ${source.fsPath}` : ''}`); }
 	private html(webview: vscode.Webview): string {
 		const script = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'preview.js'));
