@@ -1,0 +1,97 @@
+{
+  "name": "vscode-remarkable",
+  "displayName": "reMarkable Preview",
+  "description": "Preview local reMarkable documents as cached PDFs rendered by reMder.",
+  "version": "0.0.1",
+  "extensionKind": [
+    "workspace"
+  ],
+  "engines": {
+    "vscode": "^1.133.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:remarkablePreview.openPreview",
+    "onCommand:remarkablePreview.openPreviewToSide",
+    "onCommand:remarkablePreview.refreshPreview"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "remarkablePreview.openPreview",
+        "title": "Open Preview",
+        "category": "reMarkable",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "remarkablePreview.openPreviewToSide",
+        "title": "Open Preview to the Side",
+        "category": "reMarkable",
+        "icon": "$(split-horizontal)"
+      },
+      {
+        "command": "remarkablePreview.refreshPreview",
+        "title": "Refresh Preview",
+        "category": "reMarkable",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        { "command": "remarkablePreview.openPreview", "when": "resourceExtname == .rmdoc", "group": "navigation@1" },
+        { "command": "remarkablePreview.openPreviewToSide", "when": "resourceExtname == .rmdoc", "group": "navigation@2" },
+        { "command": "remarkablePreview.refreshPreview", "when": "resourceExtname == .rmdoc", "group": "navigation@3" }
+      ],
+      "editor/title": [
+        { "command": "remarkablePreview.openPreview", "alt": "remarkablePreview.openPreviewToSide", "when": "resourceExtname == .rmdoc", "group": "navigation@1" },
+        { "command": "remarkablePreview.refreshPreview", "when": "resourceExtname == .rmdoc", "group": "navigation@2" }
+      ],
+      "editor/title/context": [
+        { "command": "remarkablePreview.openPreview", "when": "resourceExtname == .rmdoc", "group": "3_open@1" },
+        { "command": "remarkablePreview.openPreviewToSide", "when": "resourceExtname == .rmdoc", "group": "3_open@2" },
+        { "command": "remarkablePreview.refreshPreview", "when": "resourceExtname == .rmdoc", "group": "3_open@3" }
+      ]
+    },
+    "configuration": {
+      "title": "reMarkable Preview",
+      "properties": {
+        "remarkablePreview.remderPath": {
+          "type": "string",
+          "default": "reMder-client",
+          "scope": "machine",
+          "description": "Path or command name for the reMder-client executable. In remote windows, configure this in the remote machine's settings."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "node --test out/test/*.test.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "1.125.0",
+    "@types/node": "24.x",
+    "typescript-eslint": "^8.61.1",
+    "eslint": "^10.5.0",
+    "esbuild": "^0.28.1",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "diff": "^8.0.4",
+    "serialize-javascript": "^7.0.6"
+  }
+}
