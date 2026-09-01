@@ -11,6 +11,7 @@ export interface SourceFingerprint extends SourceMetadata {
 
 export interface FingerprintResult extends SourceFingerprint {
 	reused: boolean;
+	contents?: Uint8Array;
 }
 
 export class SourceFingerprintCache {
@@ -21,10 +22,11 @@ export class SourceFingerprintCache {
 		if (previous && previous.size === metadata.size && previous.mtime === metadata.mtime) {
 			return { ...previous, reused: true };
 		}
-		const contentHash = hashContents(await read());
+		const contents = await read();
+		const contentHash = hashContents(contents);
 		const fingerprint = { ...metadata, contentHash };
 		this.fingerprints.set(uri, fingerprint);
-		return { ...fingerprint, reused: false };
+		return { ...fingerprint, reused: false, contents };
 	}
 
 	public forget(uri: string): void {

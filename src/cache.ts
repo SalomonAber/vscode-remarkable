@@ -94,10 +94,7 @@ export class RenderCache {
 		if (!force && await isValidCacheEntry(finalPath)) {
 			return finalPath;
 		}
-		await Promise.all([
-			fs.rm(temporaryPath, { force: true }),
-			fs.rm(finalPath, { force: true }),
-		]);
+		await fs.rm(temporaryPath, { force: true });
 		try {
 			await render(temporaryPath);
 			if (!await isValidCacheEntry(temporaryPath)) {

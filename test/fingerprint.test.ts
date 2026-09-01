@@ -25,3 +25,13 @@ test('changed metadata causes a content rehash and changed content gets a new re
 		calculateCacheKeyForContentHash(second.contentHash, 'renderer', {}),
 	);
 });
+
+test('a source-change invalidation rehashes a same-size, same-mtime replacement', async () => {
+	const cache = new SourceFingerprintCache();
+	const metadata = { size: 4, mtime: 100 };
+	const first = await cache.get('file:///note.rmdoc', metadata, async () => Buffer.from('one!'));
+	cache.forget('file:///note.rmdoc');
+	const replacement = await cache.get('file:///note.rmdoc', metadata, async () => Buffer.from('two!'));
+	assert.equal(replacement.reused, false);
+	assert.notEqual(first.contentHash, replacement.contentHash);
+});

@@ -32,6 +32,17 @@ export async function renderDocument(executable: string, inputPath: string, outp
 	return result;
 }
 
+/** Render an immutable source snapshot so the cache key always describes the rendered bytes. */
+export async function renderSnapshot(executable: string, contents: Uint8Array, outputPath: string, runner: ProcessRunner = spawnProcess): Promise<ProcessResult> {
+	const inputPath = `${outputPath}.input.rmdoc`;
+	try {
+		await fs.writeFile(inputPath, contents);
+		return await renderDocument(executable, inputPath, outputPath, runner);
+	} finally {
+		await fs.rm(inputPath, { force: true });
+	}
+}
+
 export async function getRendererIdentity(executable: string): Promise<string> {
 	const resolvedPath = await resolveExecutable(executable);
 	if (!resolvedPath) {

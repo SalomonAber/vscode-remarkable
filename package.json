@@ -13,7 +13,6 @@
     "Other"
   ],
   "activationEvents": [
-    "onCustomEditor:remarkablePreview.editor",
     "onCommand:remarkablePreview.openPreview",
     "onCommand:remarkablePreview.openPreviewToSide",
     "onCommand:remarkablePreview.refreshPreview"

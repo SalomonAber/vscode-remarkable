@@ -71,6 +71,18 @@ test('failed render leaves no valid cache entry', async () => {
 	});
 });
 
+test('a failed forced refresh preserves the last known-good cache entry', async () => {
+	await withCache(async cache => {
+		const key = 'f'.repeat(64);
+		const existing = await cache.getOrRender(key, async temporaryPath => { await fs.writeFile(temporaryPath, '%PDF-known-good'); });
+		await assert.rejects(cache.getOrRender(key, async temporaryPath => {
+			await fs.writeFile(temporaryPath, '%PDF-incomplete');
+			throw new Error('renderer failed');
+		}, true), /renderer failed/);
+		assert.equal(await fs.readFile(existing, 'utf8'), '%PDF-known-good');
+	});
+});
+
 test('concurrent rendering for one key is deduplicated', async () => {
 	await withCache(async cache => {
 		const key = 'd'.repeat(64);
