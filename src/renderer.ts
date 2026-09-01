@@ -45,6 +45,25 @@ export async function getRendererIdentity(executable: string): Promise<string> {
 	}
 }
 
+export class RendererIdentityCache {
+	private readonly identities = new Map<string, Promise<string>>();
+	public constructor(private readonly resolve: (executable: string) => Promise<string> = getRendererIdentity) {}
+
+	public get(executable: string): Promise<string> {
+		let identity = this.identities.get(executable);
+		if (!identity) {
+			identity = this.resolve(executable);
+			this.identities.set(executable, identity);
+		}
+		return identity;
+	}
+
+	public invalidate(executable?: string): void {
+		if (executable) {this.identities.delete(executable);}
+		else {this.identities.clear();}
+	}
+}
+
 async function spawnProcess(executable: string, args: readonly string[]): Promise<ProcessResult> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(executable, [...args], { shell: false, windowsHide: true });

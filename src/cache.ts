@@ -5,9 +5,13 @@ import * as path from 'node:path';
 export type RenderOperation = (temporaryPath: string) => Promise<void>;
 
 export function calculateCacheKey(contents: Uint8Array, rendererIdentity: string, renderSettings: unknown): string {
+	return calculateCacheKeyForContentHash(createHash('sha256').update(contents).digest('hex'), rendererIdentity, renderSettings);
+}
+
+export function calculateCacheKeyForContentHash(contentHash: string, rendererIdentity: string, renderSettings: unknown): string {
 	const hash = createHash('sha256');
-	hash.update('rmdoc-content\0');
-	hash.update(contents);
+	hash.update('rmdoc-content-sha256\0');
+	hash.update(contentHash);
 	hash.update('\0renderer-identity\0');
 	hash.update(rendererIdentity);
 	hash.update('\0render-settings\0');
@@ -41,6 +45,46 @@ export class RenderCache {
 		};
 		void operation.then(clearInFlight, clearInFlight);
 		return operation;
+	}
+
+	public hasValidEntry(cacheKey: string): Promise<boolean> {
+		return isValidCacheEntry(getCachePath(this.cacheDirectory, cacheKey));
+	}
+
+	public async cleanup(maxSizeBytes: number, protectedPaths: ReadonlySet<string> = new Set()): Promise<string[]> {
+		try {
+			const entries = await fs.readdir(this.cacheDirectory, { withFileTypes: true });
+			const files = (await Promise.all(entries
+				.filter(entry => entry.isFile() && entry.name.endsWith('.pdf'))
+				.map(async entry => {
+					const filePath = path.join(this.cacheDirectory, entry.name);
+					return { filePath, stat: await fs.stat(filePath) };
+				})))
+				.filter(entry => !protectedPaths.has(entry.filePath) && !this.inFlight.has(path.basename(entry.filePath, '.pdf')))
+				.sort((left, right) => left.stat.mtimeMs - right.stat.mtimeMs);
+			let total = files.reduce((sum, entry) => sum + entry.stat.size, 0)
+				+ (await this.protectedSize(protectedPaths));
+			const removed: string[] = [];
+			for (const entry of files) {
+				if (total <= maxSizeBytes) {
+					break;
+				}
+				await fs.rm(entry.filePath, { force: true });
+				total -= entry.stat.size;
+				removed.push(entry.filePath);
+			}
+			return removed;
+		} catch {
+			return [];
+		}
+	}
+
+	private async protectedSize(protectedPaths: ReadonlySet<string>): Promise<number> {
+		let size = 0;
+		for (const filePath of protectedPaths) {
+			try { size += (await fs.stat(filePath)).size; } catch {}
+		}
+		return size;
 	}
 
 	private async render(cacheKey: string, render: RenderOperation, force: boolean): Promise<string> {

@@ -63,6 +63,19 @@
           "default": "reMder-client",
           "scope": "machine",
           "description": "Path or command name for the reMder-client executable. In remote windows, configure this in the remote machine's settings."
+        },
+        "remarkablePreview.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Refresh an open preview after its .rmdoc source changes."
+        },
+        "remarkablePreview.cacheMaxSizeMB": {
+          "type": "number",
+          "default": 500,
+          "minimum": 1,
+          "scope": "machine",
+          "description": "Maximum size of unused cached preview PDFs in MB."
         }
       }
     }
