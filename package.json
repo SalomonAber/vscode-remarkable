@@ -13,6 +13,7 @@
     "Other"
   ],
   "activationEvents": [
+    "workspaceContains:**/*.rmdoc",
     "onCommand:remarkablePreview.openPreview",
     "onCommand:remarkablePreview.openPreviewToSide",
     "onCommand:remarkablePreview.refreshPreview"
@@ -110,6 +111,12 @@
           "default": true,
           "scope": "resource",
           "description": "Refresh an open preview after its .rmdoc source changes."
+        },
+        "remarkablePreview.prewarmCache": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Render workspace .rmdoc files into the preview cache in the background."
         },
         "remarkablePreview.cacheMaxSizeMB": {
           "type": "number",

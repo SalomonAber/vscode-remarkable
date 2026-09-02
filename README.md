@@ -26,12 +26,15 @@ The preview uses a restrictive webview policy: PDF.js and its worker are bundled
 
 PDFs are stored under the extension's `globalStorageUri/render-cache` directory when it is file-backed. VS Code builds that expose virtual extension storage use `$XDG_CACHE_HOME/vscode-remarkable/render-cache` (or `~/.cache/vscode-remarkable/render-cache`) instead. Keys include the complete `.rmdoc` contents, the renderer executable identity, and render-affecting settings. A per-session fingerprint cache avoids rehashing a source when its size and modification time are unchanged; those metadata values are never used as the render cache key. Renderer identity is also cached for each configured executable path for the session. Rendering writes `<key>.pdf.tmp` and atomically renames it only after successful completion.
 
+By default, the extension discovers `.rmdoc` files in the current workspace and warms missing cache entries one at a time in the background. New and changed files are queued automatically. Background failures are written to the output channel and do not interrupt editing; set `remarkablePreview.prewarmCache` to `false` to disable this behavior for a workspace.
+
 Unused cache files are cleaned conservatively after activation and successful renders. The oldest entries are removed first, while active previews and in-flight renders are retained. Cleanup failure never blocks a preview.
 
 ## Configuration
 
 - `remarkablePreview.remderPath` — command or absolute path for `reMder-client` (machine scope).
 - `remarkablePreview.autoRefresh` — refresh active previews after source changes; default `true`.
+- `remarkablePreview.prewarmCache` — cache workspace previews in the background; default `true`.
 - `remarkablePreview.cacheMaxSizeMB` — maximum unused PDF cache size; default `500` MB.
 
 Diagnostics are recorded in the **reMarkable Preview** Output channel. In Remote SSH and similar remote windows, the workspace extension host reads the source, runs reMder, watches the source, and stores the cache on the remote host.

@@ -1,9 +1,8 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { RenderCache, calculateCacheKeyForContentHash } from './cache';
 import { EditorController, isIncomingEditorMessage } from './editor-controller';
-import { hashContents, SourceFingerprintCache, SourceMetadata } from './fingerprint';
-import { RendererIdentityCache, renderSnapshot } from './renderer';
+import { SourceMetadata } from './fingerprint';
+import { RenderService } from './render-service';
 
 export const REMARKABLE_EDITOR_VIEW_TYPE = 'remarkablePreview.editor';
 const SOURCE_POLL_INTERVAL_MS = 2_000;
@@ -27,10 +26,8 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 
 	public constructor(
 		private readonly context: vscode.ExtensionContext,
-		private readonly cache: RenderCache,
+		private readonly renders: RenderService,
 		private readonly cacheDirectory: string,
-		private readonly fingerprints: SourceFingerprintCache,
-		private readonly identities: RendererIdentityCache,
 		private readonly output: vscode.OutputChannel,
 		private readonly cleanup: (protectedPaths: ReadonlySet<string>) => void,
 	) {}
@@ -108,7 +105,7 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 
 	private schedule(source: vscode.Uri): void {
 		const state = this.sources.get(source.toString()); if (!state) { return; }
-		this.fingerprints.forget(source.toString());
+		this.renders.invalidate(source.toString());
 		this.log('source changed; waiting for filesystem to stabilize', source);
 		if (state.timer) { clearTimeout(state.timer); }
 		state.timer = setTimeout(() => { state.timer = undefined; if (vscode.workspace.getConfiguration('remarkablePreview', source).get<boolean>('autoRefresh', true)) { void this.render(source, false); } }, 350);
@@ -118,34 +115,13 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 		const state = this.ensure(source);
 		const generation = state.controller.begin(); state.controller.loading();
 		try {
-			if (force) { this.fingerprints.forget(source.toString()); }
 			const metadata = await vscode.workspace.fs.stat(source);
 			state.metadata = metadata;
 			state.missing = false;
-			const fingerprint = await this.fingerprints.get(source.toString(), metadata, async () => vscode.workspace.fs.readFile(source));
-			this.log(fingerprint.reused ? 'content hash reused from fingerprint' : 'content rehashed', source);
-			if (!force && state.contentHash === fingerprint.contentHash) {
-				this.log('source unchanged after event', source);
-				if (state.pdfPath) { state.controller.pdf(generation, state.pdfPath); }
-				return;
-			}
 			const executable = vscode.workspace.getConfiguration('remarkablePreview', source).get<string>('remderPath', 'reMder-client');
-			const identity = await this.identities.get(executable);
-			let contentHash = fingerprint.contentHash;
-			let key = calculateCacheKeyForContentHash(contentHash, identity, { remderPath: executable });
-			let hit = !force && await this.cache.hasValidEntry(key);
-			let sourceContents: Uint8Array | undefined;
-			if (!hit) {
-				sourceContents = fingerprint.contents ?? await vscode.workspace.fs.readFile(source);
-				contentHash = hashContents(sourceContents);
-				key = calculateCacheKeyForContentHash(contentHash, identity, { remderPath: executable });
-				hit = !force && await this.cache.hasValidEntry(key);
-			}
-			this.log(hit ? 'cache hit' : 'cache miss', source);
-			const pdfPath = await this.cache.getOrRender(key, async temporaryPath => {
-				const snapshot = sourceContents ?? await vscode.workspace.fs.readFile(source);
-				this.log('renderer started', source); await renderSnapshot(executable, snapshot, temporaryPath); this.log('renderer completed', source);
-			}, force);
+			const { contentHash, pdfPath } = await this.renders.getOrRender(source.toString(), metadata,
+				async () => vscode.workspace.fs.readFile(source), executable, force, message => this.log(message, source));
+			if (!force && state.contentHash === contentHash) { this.log('source unchanged after event', source); }
 			if (!state.controller.pdf(generation, pdfPath)) { this.log('stale render completed; preview not replaced', source); return; }
 			state.contentHash = contentHash;
 			state.pdfPath = pdfPath;
@@ -155,7 +131,7 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 			this.log(`renderer failed: ${message}`, source);
 			state.controller.error(generation, isFileNotFound(error) ? 'The source file is no longer available.' : message);
 			if (isFileNotFound(error)) {
-				this.fingerprints.forget(source.toString());
+				this.renders.invalidate(source.toString());
 				state.watcher?.dispose(); state.watcher = undefined;
 			}
 		}

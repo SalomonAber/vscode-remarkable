@@ -2,8 +2,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { RenderCache } from './cache';
+import { WorkspaceCacheWarmer } from './cache-warmer';
 import { SourceFingerprintCache } from './fingerprint';
 import { RemarkableEditorProvider, REMARKABLE_EDITOR_VIEW_TYPE } from './remarkable-editor';
+import { RenderService } from './render-service';
 import { RendererIdentityCache } from './renderer';
 
 const OPEN_PREVIEW = 'remarkablePreview.openPreview';
@@ -15,8 +17,11 @@ export function activate(context: vscode.ExtensionContext): void {
 	const cacheDirectory = getCacheDirectory(context);
 	const cache = new RenderCache(cacheDirectory);
 	const identities = new RendererIdentityCache();
-	const provider = new RemarkableEditorProvider(context, cache, cacheDirectory, new SourceFingerprintCache(), identities, output,
+	const renders = new RenderService(cache, new SourceFingerprintCache(), identities);
+	const provider = new RemarkableEditorProvider(context, renders, cacheDirectory, output,
 		protectedPaths => void cleanupCache(cache, protectedPaths, vscode.workspace.getConfiguration('remarkablePreview').get<number>('cacheMaxSizeMB', 500), output));
+	const warmer = new WorkspaceCacheWarmer(renders, output,
+		() => void cleanupCache(cache, provider.activePdfPaths(), vscode.workspace.getConfiguration('remarkablePreview').get<number>('cacheMaxSizeMB', 500), output));
 	const open = async (resource: vscode.Uri | undefined, side: boolean) => {
 		const source = resolveSource(resource);
 		if (!source) { await vscode.window.showErrorMessage('Select or open a .rmdoc file first.'); return; }
@@ -29,16 +34,22 @@ export function activate(context: vscode.ExtensionContext): void {
 		if (!provider.isOpen(source)) { await open(source, false); return; }
 		await provider.refresh(source, true);
 	};
-	context.subscriptions.push(output, provider,
+	context.subscriptions.push(output, provider, warmer,
 		vscode.window.registerCustomEditorProvider(REMARKABLE_EDITOR_VIEW_TYPE, provider, { webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: true }),
 		vscode.commands.registerCommand(OPEN_PREVIEW, (resource?: vscode.Uri) => open(resource, false)),
 		vscode.commands.registerCommand(OPEN_PREVIEW_TO_SIDE, (resource?: vscode.Uri) => open(resource, true)),
 		vscode.commands.registerCommand(REFRESH_PREVIEW, refresh),
 		vscode.workspace.onDidChangeConfiguration(event => {
-			if (event.affectsConfiguration('remarkablePreview.remderPath')) { identities.invalidate(); output.appendLine(`${new Date().toISOString()} renderer path changed; identity cache invalidated`); }
+			if (event.affectsConfiguration('remarkablePreview.remderPath')) {
+				identities.invalidate();
+				output.appendLine(`${new Date().toISOString()} renderer path changed; identity cache invalidated`);
+				void warmer.scan();
+			}
+			if (event.affectsConfiguration('remarkablePreview.prewarmCache')) { void warmer.scan(); }
 		}),
 	);
 	void cleanupCache(cache, provider.activePdfPaths(), vscode.workspace.getConfiguration('remarkablePreview').get<number>('cacheMaxSizeMB', 500), output);
+	void warmer.scan();
 }
 
 async function cleanupCache(cache: RenderCache, protectedPaths: ReadonlySet<string>, maxSizeMB: number, output: vscode.OutputChannel): Promise<void> {
