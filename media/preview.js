@@ -25807,6 +25807,7 @@
   // media/preview.ts
   var vscode = acquireVsCodeApi();
   var app = document.getElementById("app");
+  var renderPixelRatio = 2;
   var page = 1;
   var zoom = 1;
   var renderedZoom = 1;
@@ -25837,10 +25838,11 @@
       const fragment = document.createDocumentFragment();
       for (let number = 1; number <= pdfDocument.numPages; number++) {
         const pdfPage = await pdfDocument.getPage(number);
-        const viewport = pdfPage.getViewport({ scale: targetZoom });
+        const viewport = pdfPage.getViewport({ scale: targetZoom * renderPixelRatio });
         const canvas = document.createElement("canvas");
         canvas.width = Math.ceil(viewport.width);
         canvas.height = Math.ceil(viewport.height);
+        canvas.style.width = `${viewport.width / renderPixelRatio}px`;
         canvas.setAttribute("aria-label", `Page ${number}`);
         await pdfPage.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
         fragment.append(canvas);
@@ -25887,7 +25889,7 @@
     const ratio = nextZoom / zoom;
     zoom = nextZoom;
     for (const canvas of app.querySelectorAll("canvas")) {
-      canvas.style.width = `${canvas.width * zoom / renderedZoom}px`;
+      canvas.style.width = `${canvas.width * zoom / (renderedZoom * renderPixelRatio)}px`;
     }
     app.scrollLeft = (app.scrollLeft + x) * ratio - x;
     app.scrollTop = (app.scrollTop + y) * ratio - y;

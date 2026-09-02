@@ -5,6 +5,7 @@ declare global { interface Window { __remarkableWorkerUri: string; } }
 
 const vscode = acquireVsCodeApi();
 const app = document.getElementById('app')!;
+const renderPixelRatio = 2;
 let page = 1;
 let zoom = 1;
 let renderedZoom = 1;
@@ -32,9 +33,10 @@ async function showPdf(uri: string): Promise<void> {
 		const fragment = document.createDocumentFragment();
 		for (let number = 1; number <= pdfDocument.numPages; number++) {
 			const pdfPage = await pdfDocument.getPage(number);
-			const viewport = pdfPage.getViewport({ scale: targetZoom });
+			const viewport = pdfPage.getViewport({ scale: targetZoom * renderPixelRatio });
 			const canvas = document.createElement('canvas');
 			canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
+			canvas.style.width = `${viewport.width / renderPixelRatio}px`;
 			canvas.setAttribute('aria-label', `Page ${number}`);
 			await pdfPage.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
 			fragment.append(canvas);
@@ -67,7 +69,7 @@ app.addEventListener('wheel', event => {
 	const y = event.clientY - bounds.top;
 	const ratio = nextZoom / zoom;
 	zoom = nextZoom;
-	for (const canvas of app.querySelectorAll('canvas')) { canvas.style.width = `${canvas.width * zoom / renderedZoom}px`; }
+	for (const canvas of app.querySelectorAll('canvas')) { canvas.style.width = `${canvas.width * zoom / (renderedZoom * renderPixelRatio)}px`; }
 	app.scrollLeft = (app.scrollLeft + x) * ratio - x;
 	app.scrollTop = (app.scrollTop + y) * ratio - y;
 	scrollLeft = app.scrollLeft;
