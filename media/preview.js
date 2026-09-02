@@ -25809,7 +25809,12 @@
   var app = document.getElementById("app");
   var page = 1;
   var zoom = 1;
+  var renderedZoom = 1;
   var scrollTop = 0;
+  var scrollLeft = 0;
+  var currentUri;
+  var renderGeneration = 0;
+  var zoomTimer;
   GlobalWorkerOptions.workerSrc = window.__remarkableWorkerUri;
   window.addEventListener("message", (event) => {
     const message = event.data;
@@ -25824,12 +25829,15 @@
     }
   });
   async function showPdf(uri) {
+    currentUri = uri;
+    const generation = ++renderGeneration;
+    const targetZoom = zoom;
     try {
       const pdfDocument = await getDocument(uri).promise;
       const fragment = document.createDocumentFragment();
       for (let number = 1; number <= pdfDocument.numPages; number++) {
         const pdfPage = await pdfDocument.getPage(number);
-        const viewport = pdfPage.getViewport({ scale: zoom });
+        const viewport = pdfPage.getViewport({ scale: targetZoom });
         const canvas = document.createElement("canvas");
         canvas.width = Math.ceil(viewport.width);
         canvas.height = Math.ceil(viewport.height);
@@ -25837,10 +25845,17 @@
         await pdfPage.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
         fragment.append(canvas);
       }
+      if (generation !== renderGeneration) {
+        return;
+      }
       app.replaceChildren(fragment);
+      renderedZoom = targetZoom;
+      app.scrollLeft = scrollLeft;
       app.scrollTop = scrollTop;
     } catch (error) {
-      showError(error instanceof Error ? error.message : "PDF viewer failed to load the rendered file.");
+      if (generation === renderGeneration) {
+        showError(error instanceof Error ? error.message : "PDF viewer failed to load the rendered file.");
+      }
     }
   }
   function showError(message) {
@@ -25857,8 +25872,40 @@
     element.textContent = contents;
     return element;
   }
+  app.addEventListener("wheel", (event) => {
+    if (!event.ctrlKey || !currentUri) {
+      return;
+    }
+    event.preventDefault();
+    const nextZoom = Math.min(5, Math.max(0.25, zoom * Math.exp(-event.deltaY * 0.01)));
+    if (Math.abs(nextZoom - zoom) < 1e-3) {
+      return;
+    }
+    const bounds = app.getBoundingClientRect();
+    const x = event.clientX - bounds.left;
+    const y = event.clientY - bounds.top;
+    const ratio = nextZoom / zoom;
+    zoom = nextZoom;
+    for (const canvas of app.querySelectorAll("canvas")) {
+      canvas.style.width = `${canvas.width * zoom / renderedZoom}px`;
+    }
+    app.scrollLeft = (app.scrollLeft + x) * ratio - x;
+    app.scrollTop = (app.scrollTop + y) * ratio - y;
+    scrollLeft = app.scrollLeft;
+    scrollTop = app.scrollTop;
+    if (zoomTimer) {
+      clearTimeout(zoomTimer);
+    }
+    zoomTimer = setTimeout(() => {
+      zoomTimer = void 0;
+      if (currentUri) {
+        void showPdf(currentUri);
+      }
+    }, 80);
+  }, { passive: false });
   app.addEventListener("scroll", () => {
     scrollTop = app.scrollTop;
+    scrollLeft = app.scrollLeft;
     vscode.postMessage({ type: "viewState", page, zoom, scrollTop });
   });
 })();
