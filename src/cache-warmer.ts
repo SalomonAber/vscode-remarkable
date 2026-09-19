@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { RenderService } from './render-service';
+import { createRendererBackend, RenderService } from './render-service';
 
 const CHANGE_DEBOUNCE_MS = 500;
 
@@ -79,9 +79,17 @@ export class WorkspaceCacheWarmer implements vscode.Disposable {
 				if (!this.isEnabled(source)) { continue; }
 				try {
 					const metadata = await vscode.workspace.fs.stat(source);
-					const executable = vscode.workspace.getConfiguration('remarkablePreview', source).get<string>('remderPath', 'reMder-client');
-					await this.renders.getOrRender(key, metadata, async () => vscode.workspace.fs.readFile(source), executable, false,
-						message => this.log(`background ${message}`, source));
+					const configuration = vscode.workspace.getConfiguration('remarkablePreview', source);
+					const foregroundExecutable = configuration.get<string>('remderPath', 'reMder-client');
+					const backgroundExecutable = configuration.get<string>('backgroundRemderPath', '').trim() || foregroundExecutable;
+					const backend = createRendererBackend(backgroundExecutable, { cacheIdentity: foregroundExecutable });
+					await this.renders.getOrRender({
+						source: key,
+						metadata,
+						read: async () => vscode.workspace.fs.readFile(source),
+						backend,
+						log: message => this.log(`background ${message}`, source),
+					});
 					this.log('background cache ready', source);
 					this.cleanup();
 				} catch (error) {

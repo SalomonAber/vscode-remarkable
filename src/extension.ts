@@ -45,6 +45,7 @@ export function activate(context: vscode.ExtensionContext): void {
 				output.appendLine(`${new Date().toISOString()} renderer path changed; identity cache invalidated`);
 				void warmer.scan();
 			}
+			if (event.affectsConfiguration('remarkablePreview.backgroundRemderPath')) { void warmer.scan(); }
 			if (event.affectsConfiguration('remarkablePreview.prewarmCache')) { void warmer.scan(); }
 		}),
 	);

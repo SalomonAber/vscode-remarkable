@@ -106,6 +106,12 @@
           "scope": "machine",
           "description": "Path or command name for the reMder-client executable. In remote windows, configure this in the remote machine's settings."
         },
+        "remarkablePreview.backgroundRemderPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Path or command name for a reMder-client connected to a separate renderer instance for background cache warming. Leave empty to share the foreground renderer safely."
+        },
         "remarkablePreview.autoRefresh": {
           "type": "boolean",
           "default": true,

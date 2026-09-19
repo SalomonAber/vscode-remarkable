@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { EditorController, isIncomingEditorMessage } from './editor-controller';
 import { SourceMetadata } from './fingerprint';
-import { RenderService } from './render-service';
+import { createRendererBackend, RenderService } from './render-service';
 
 export const REMARKABLE_EDITOR_VIEW_TYPE = 'remarkablePreview.editor';
 const SOURCE_POLL_INTERVAL_MS = 2_000;
@@ -119,8 +119,14 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 			state.metadata = metadata;
 			state.missing = false;
 			const executable = vscode.workspace.getConfiguration('remarkablePreview', source).get<string>('remderPath', 'reMder-client');
-			const { contentHash, pdfPath } = await this.renders.getOrRender(source.toString(), metadata,
-				async () => vscode.workspace.fs.readFile(source), executable, force, message => this.log(message, source));
+			const { contentHash, pdfPath } = await this.renders.getOrRender({
+				source: source.toString(),
+				metadata,
+				read: async () => vscode.workspace.fs.readFile(source),
+				backend: createRendererBackend(executable),
+				force,
+				log: message => this.log(message, source),
+			});
 			if (!force && state.contentHash === contentHash) { this.log('source unchanged after event', source); }
 			if (!state.controller.pdf(generation, pdfPath)) { this.log('stale render completed; preview not replaced', source); return; }
 			state.contentHash = contentHash;

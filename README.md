@@ -33,6 +33,7 @@ Unused cache files are cleaned conservatively after activation and successful re
 ## Configuration
 
 - `remarkablePreview.remderPath` — command or absolute path for `reMder-client` (machine scope).
+- `remarkablePreview.backgroundRemderPath` — optional client connected to a separate reMder instance for background cache warming. The separate instance must use isolated VM state and ports; when unset, background and foreground rendering share the primary instance serially.
 - `remarkablePreview.autoRefresh` — refresh active previews after source changes; default `true`.
 - `remarkablePreview.prewarmCache` — cache workspace previews in the background; default `true`.
 - `remarkablePreview.cacheMaxSizeMB` — maximum unused PDF cache size; default `500` MB.
