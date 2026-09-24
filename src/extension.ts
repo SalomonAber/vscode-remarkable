@@ -11,6 +11,7 @@ import { RendererIdentityCache } from './renderer';
 const OPEN_PREVIEW = 'remarkablePreview.openPreview';
 const OPEN_PREVIEW_TO_SIDE = 'remarkablePreview.openPreviewToSide';
 const REFRESH_PREVIEW = 'remarkablePreview.refreshPreview';
+const EXPORT_PDF = 'remarkablePreview.exportPdf';
 
 export function activate(context: vscode.ExtensionContext): void {
 	const output = vscode.window.createOutputChannel('reMarkable Preview');
@@ -34,11 +35,41 @@ export function activate(context: vscode.ExtensionContext): void {
 		if (!provider.isOpen(source)) { await open(source, false); return; }
 		await provider.refresh(source, true);
 	};
+	const exportPdf = async (resource?: vscode.Uri) => {
+		const source = resolveSource(resource);
+		if (!source) { await vscode.window.showErrorMessage('Select or open a .rmdoc file first.'); return; }
+		if (source.scheme !== 'file') { await vscode.window.showErrorMessage('reMarkable Preview requires a file available to the extension host.'); return; }
+		let pdfPath: string;
+		try {
+			pdfPath = await vscode.window.withProgress(
+				{ location: vscode.ProgressLocation.Notification, title: `Rendering ${path.basename(source.fsPath)}…` },
+				() => provider.pdfFor(source));
+		} catch (error) {
+			await vscode.window.showErrorMessage(`reMarkable Preview could not render the document: ${error instanceof Error ? error.message : String(error)}`);
+			return;
+		}
+		const target = await vscode.window.showSaveDialog({
+			title: 'Export Rendered PDF',
+			defaultUri: source.with({ path: source.path.replace(/\.rmdoc$/i, '.pdf') }),
+			filters: { PDF: ['pdf'] },
+		});
+		if (!target) { return; }
+		try {
+			await vscode.workspace.fs.copy(vscode.Uri.file(pdfPath), target, { overwrite: true });
+		} catch (error) {
+			await vscode.window.showErrorMessage(`reMarkable Preview could not write the PDF: ${error instanceof Error ? error.message : String(error)}`);
+			return;
+		}
+		output.appendLine(`${new Date().toISOString()} exported PDF to ${target.fsPath}: ${source.fsPath}`);
+		const action = await vscode.window.showInformationMessage(`Exported ${path.basename(target.path)}.`, 'Open');
+		if (action) { await vscode.commands.executeCommand('vscode.open', target); }
+	};
 	context.subscriptions.push(output, provider, warmer,
 		vscode.window.registerCustomEditorProvider(REMARKABLE_EDITOR_VIEW_TYPE, provider, { webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: true }),
 		vscode.commands.registerCommand(OPEN_PREVIEW, (resource?: vscode.Uri) => open(resource, false)),
 		vscode.commands.registerCommand(OPEN_PREVIEW_TO_SIDE, (resource?: vscode.Uri) => open(resource, true)),
 		vscode.commands.registerCommand(REFRESH_PREVIEW, refresh),
+		vscode.commands.registerCommand(EXPORT_PDF, (resource?: vscode.Uri) => exportPdf(resource)),
 		vscode.workspace.onDidChangeConfiguration(event => {
 			if (event.affectsConfiguration('remarkablePreview.remderPath')) {
 				identities.invalidate();

@@ -17,6 +17,9 @@ Set `remarkablePreview.remderPath` when `reMder-client` is not on `PATH`. This i
 - **reMarkable: Open Preview**
 - **reMarkable: Open Preview to the Side**
 - **reMarkable: Refresh Preview**
+- **reMarkable: Export Rendered PDF**
+
+Export renders the current source (reusing the cache when it is still valid) and copies the resulting PDF to a location you choose; the cached file itself stays an implementation detail.
 
 The extension also contributes **reMarkable Preview** to **Open With...** for `.rmdoc` files. Each preview remains identified by its source `.rmdoc` tab, including in multiple editor groups. Refresh rerenders the existing preview in place. Open previews are watched; when their source stabilizes after a change, the existing webview updates only when its actual content hash changed.
 

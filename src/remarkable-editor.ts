@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { EditorController, isIncomingEditorMessage } from './editor-controller';
 import { SourceMetadata } from './fingerprint';
-import { createRendererBackend, RenderService } from './render-service';
+import { CachedRenderResult, createRendererBackend, RenderService } from './render-service';
 
 export const REMARKABLE_EDITOR_VIEW_TYPE = 'remarkablePreview.editor';
 const SOURCE_POLL_INTERVAL_MS = 2_000;
@@ -59,6 +59,7 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 	}
 
 	public refresh(source: vscode.Uri, force = true): Promise<void> { return this.render(source, force); }
+	public async pdfFor(source: vscode.Uri): Promise<string> { return (await this.produce(source, false)).pdfPath; }
 	public isOpen(source: vscode.Uri): boolean { return (this.sources.get(source.toString())?.controller.size ?? 0) > 0; }
 	public activePdfPaths(): ReadonlySet<string> {
 		return new Set([...this.sources.values()].flatMap(state => state.pdfPath ? [state.pdfPath] : []));
@@ -111,22 +112,26 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 		state.timer = setTimeout(() => { state.timer = undefined; if (vscode.workspace.getConfiguration('remarkablePreview', source).get<boolean>('autoRefresh', true)) { void this.render(source, false); } }, 350);
 	}
 
+	private async produce(source: vscode.Uri, force: boolean): Promise<CachedRenderResult> {
+		const metadata = await vscode.workspace.fs.stat(source);
+		const state = this.sources.get(source.toString());
+		if (state) { state.metadata = metadata; state.missing = false; }
+		const executable = vscode.workspace.getConfiguration('remarkablePreview', source).get<string>('remderPath', 'reMder-client');
+		return this.renders.getOrRender({
+			source: source.toString(),
+			metadata,
+			read: async () => vscode.workspace.fs.readFile(source),
+			backend: createRendererBackend(executable),
+			force,
+			log: message => this.log(message, source),
+		});
+	}
+
 	private async render(source: vscode.Uri, force: boolean): Promise<void> {
 		const state = this.ensure(source);
 		const generation = state.controller.begin(); state.controller.loading();
 		try {
-			const metadata = await vscode.workspace.fs.stat(source);
-			state.metadata = metadata;
-			state.missing = false;
-			const executable = vscode.workspace.getConfiguration('remarkablePreview', source).get<string>('remderPath', 'reMder-client');
-			const { contentHash, pdfPath } = await this.renders.getOrRender({
-				source: source.toString(),
-				metadata,
-				read: async () => vscode.workspace.fs.readFile(source),
-				backend: createRendererBackend(executable),
-				force,
-				log: message => this.log(message, source),
-			});
+			const { contentHash, pdfPath } = await this.produce(source, force);
 			if (!force && state.contentHash === contentHash) { this.log('source unchanged after event', source); }
 			if (!state.controller.pdf(generation, pdfPath)) { this.log('stale render completed; preview not replaced', source); return; }
 			state.contentHash = contentHash;

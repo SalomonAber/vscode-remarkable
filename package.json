@@ -16,7 +16,8 @@
     "workspaceContains:**/*.rmdoc",
     "onCommand:remarkablePreview.openPreview",
     "onCommand:remarkablePreview.openPreviewToSide",
-    "onCommand:remarkablePreview.refreshPreview"
+    "onCommand:remarkablePreview.refreshPreview",
+    "onCommand:remarkablePreview.exportPdf"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -46,6 +47,12 @@
         "title": "Refresh Preview",
         "category": "reMarkable",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "remarkablePreview.exportPdf",
+        "title": "Export Rendered PDF",
+        "category": "reMarkable",
+        "icon": "$(export)"
       }
     ],
     "menus": {
@@ -64,6 +71,11 @@
           "command": "remarkablePreview.refreshPreview",
           "when": "resourceExtname == .rmdoc",
           "group": "navigation@3"
+        },
+        {
+          "command": "remarkablePreview.exportPdf",
+          "when": "resourceExtname == .rmdoc",
+          "group": "navigation@4"
         }
       ],
       "editor/title": [
@@ -94,6 +106,11 @@
           "command": "remarkablePreview.refreshPreview",
           "when": "resourceExtname == .rmdoc",
           "group": "3_open@3"
+        },
+        {
+          "command": "remarkablePreview.exportPdf",
+          "when": "resourceExtname == .rmdoc",
+          "group": "3_open@4"
         }
       ]
     },
