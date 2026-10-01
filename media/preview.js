@@ -34995,6 +34995,7 @@
     const { EventBus: EventBus2, LinkTarget: LinkTarget2, PDFFindController: PDFFindController2, PDFLinkService: PDFLinkService2, PDFViewer: PDFViewer2 } = await Promise.resolve().then(() => (init_pdf_viewer(), pdf_viewer_exports));
     let loaded;
     let loadGeneration = 0;
+    let loads = Promise.resolve();
     const eventBus = new EventBus2();
     const linkService = new PDFLinkService2({
       eventBus,
@@ -35048,26 +35049,38 @@
       event.preventDefault();
       viewer.updateScale({ scaleFactor: Math.exp(-event.deltaY * 0.01), origin: [event.clientX, event.clientY] });
     }, { passive: false });
-    const showPdf = async (uri) => {
-      const generation = ++loadGeneration;
+    const detach = async () => {
+      const previous = loaded;
+      loaded = void 0;
+      pagesReady = false;
+      viewer.setDocument(null);
+      linkService.setDocument(null);
+      await previous?.destroy();
+    };
+    const load = async (uri, generation) => {
+      await detach();
+      if (generation !== loadGeneration) {
+        return;
+      }
       try {
         const pdfDocument = await getDocument(uri).promise;
         if (generation !== loadGeneration) {
           void pdfDocument.destroy();
           return;
         }
-        const previous = loaded;
         loaded = pdfDocument;
-        pagesReady = false;
         viewer.setDocument(pdfDocument);
         linkService.setDocument(pdfDocument, null);
         findController.setDocument(pdfDocument);
-        void previous?.destroy();
       } catch (error) {
         if (generation === loadGeneration) {
           showError(error instanceof Error ? error.message : "PDF viewer failed to load the rendered file.");
         }
       }
+    };
+    const showPdf = (uri) => {
+      const generation = ++loadGeneration;
+      loads = loads.catch(() => void 0).then(() => load(uri, generation));
     };
     deliver = (message) => {
       if (message.type === "loading") {
@@ -35077,7 +35090,7 @@
         showError(message.message || "Unknown rendering error");
       }
       if (message.type === "pdf" && typeof message.uri === "string") {
-        void showPdf(message.uri);
+        showPdf(message.uri);
       }
     };
     for (const message of queued.splice(0)) {

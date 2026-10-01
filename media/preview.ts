@@ -52,6 +52,7 @@ async function start(): Promise<void> {
 	const { EventBus, LinkTarget, PDFFindController, PDFLinkService, PDFViewer } = await import('pdfjs-dist/web/pdf_viewer.mjs');
 	let loaded: PDFDocumentProxy | undefined;
 	let loadGeneration = 0;
+	let loads: Promise<void> = Promise.resolve();
 
 	const eventBus = new EventBus();
 	const linkService = new PDFLinkService({
@@ -110,27 +111,47 @@ async function start(): Promise<void> {
 		viewer.updateScale({ scaleFactor: Math.exp(-event.deltaY * 0.01), origin: [event.clientX, event.clientY] });
 	}, { passive: false });
 
-	const showPdf = async (uri: string): Promise<void> => {
-		const generation = ++loadGeneration;
+	// pdf.js keeps its page mapping in module-global state, so only one document
+	// may be attached at a time. Attaching a freshly loaded document on top of an
+	// older one clears that mapping *after* the new document has registered its
+	// page count, so every page request on it fails — inside pdf.js, where the
+	// rejection is only logged, leaving the preview on its loading overlay for
+	// good. Detach before loading, and serialise refreshes so two loads cannot
+	// interleave and clobber each other's mapping either.
+	const detach = async (): Promise<void> => {
+		const previous = loaded;
+		loaded = undefined;
+		pagesReady = false;
+		// The typings insist on a document; pdf.js takes null as the teardown.
+		(viewer as { setDocument(pdfDocument: PDFDocumentProxy | null): void }).setDocument(null);
+		linkService.setDocument(null);
+		await previous?.destroy();
+	};
+
+	const load = async (uri: string, generation: number): Promise<void> => {
+		await detach();
+		if (generation !== loadGeneration) { return; }
 		try {
 			const pdfDocument = await pdfjsLib.getDocument(uri).promise;
 			if (generation !== loadGeneration) { void pdfDocument.destroy(); return; }
-			const previous = loaded;
 			loaded = pdfDocument;
-			pagesReady = false;
 			viewer.setDocument(pdfDocument);
 			linkService.setDocument(pdfDocument, null);
 			findController.setDocument(pdfDocument);
-			void previous?.destroy();
 		} catch (error) {
 			if (generation === loadGeneration) { showError(error instanceof Error ? error.message : 'PDF viewer failed to load the rendered file.'); }
 		}
 	};
 
+	const showPdf = (uri: string): void => {
+		const generation = ++loadGeneration;
+		loads = loads.catch(() => undefined).then(() => load(uri, generation));
+	};
+
 	deliver = message => {
 		if (message.type === 'loading') { showStatus(text('p', 'Loading reMarkable preview…')); }
 		if (message.type === 'error') { showError(message.message || 'Unknown rendering error'); }
-		if (message.type === 'pdf' && typeof message.uri === 'string') { void showPdf(message.uri); }
+		if (message.type === 'pdf' && typeof message.uri === 'string') { showPdf(message.uri); }
 	};
 	for (const message of queued.splice(0)) { deliver(message); }
 }
