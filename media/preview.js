@@ -685,8 +685,8 @@
     if (!Array.isArray(dest) || dest.length < 2) {
       return false;
     }
-    const [page2, zoom2, ...args] = dest;
-    if (!validRef(page2) && !Number.isInteger(page2)) {
+    const [page, zoom2, ...args] = dest;
+    if (!validRef(page) && !Number.isInteger(page)) {
       return false;
     }
     if (!validName(zoom2)) {
@@ -14989,9 +14989,9 @@
       const newPromiseCache = /* @__PURE__ */ new Map();
       for (let i = 0, ii = this.#pagesMapper.pagesNumber; i < ii; i++) {
         const prevPageIndex = this.#pagesMapper.getPrevPageNumber(i + 1) - 1;
-        const page2 = this.#pageCache.get(prevPageIndex);
-        if (page2) {
-          newPageCache.set(i, page2);
+        const page = this.#pageCache.get(prevPageIndex);
+        if (page) {
+          newPageCache.set(i, page);
         }
         const promise = this.#pagePromises.get(prevPageIndex);
         if (promise) {
@@ -15081,8 +15081,8 @@
       this.destroyCapability = Promise.withResolvers();
       this.#passwordCapability?.reject(new Error("Worker was destroyed during onPassword callback"));
       const waitOn = [];
-      for (const page2 of this.#pageCache.values()) {
-        waitOn.push(page2._destroy());
+      for (const page of this.#pageCache.values()) {
+        waitOn.push(page._destroy());
       }
       this.#pageCache.clear();
       this.#pagePromises.clear();
@@ -15231,8 +15231,8 @@
         if (this.destroyed) {
           return;
         }
-        const page2 = this.#pageCache.get(data.pageIndex);
-        page2._startRenderPage(data.transparency, data.cacheKey);
+        const page = this.#pageCache.get(data.pageIndex);
+        page._startRenderPage(data.transparency, data.cacheKey);
       });
       messageHandler.on("commonobj", ([id, type, exportedData]) => {
         if (this.destroyed) {
@@ -15376,9 +15376,9 @@
         if (pageInfo.refStr) {
           this.#pageRefCache.set(pageInfo.refStr, newPageIndex);
         }
-        const page2 = new PDFPageProxy(pageIndex, pageInfo, this, this._params.pdfBug);
-        this.#pageCache.set(pageIndex, page2);
-        return page2;
+        const page = new PDFPageProxy(pageIndex, pageInfo, this, this._params.pdfBug);
+        this.#pageCache.set(pageIndex, page);
+        return page;
       });
       this.#pagePromises.set(pageIndex, promise);
       return promise;
@@ -15488,10 +15488,10 @@
         return;
       }
       await this.messageHandler.sendWithPromise("Cleanup", null);
-      for (const page2 of this.#pageCache.values()) {
-        const cleanupSuccessful = page2.cleanup();
+      for (const page of this.#pageCache.values()) {
+        const cleanupSuccessful = page.cleanup();
         if (!cleanupSuccessful) {
-          throw new Error(`startCleanup: Page ${page2.pageNumber} is currently rendering.`);
+          throw new Error(`startCleanup: Page ${page.pageNumber} is currently rendering.`);
         }
       }
       this.commonObjs.clear();
@@ -16347,7 +16347,7 @@
       const {
         data,
         parent: {
-          page: page2,
+          page,
           viewport
         }
       } = this;
@@ -16418,7 +16418,7 @@
           style.borderWidth = 0;
         }
       }
-      const rect = Util.normalizeRect([data.rect[0], page2.view[3] - data.rect[1] + page2.view[1], data.rect[2], page2.view[3] - data.rect[3] + page2.view[1]]);
+      const rect = Util.normalizeRect([data.rect[0], page.view[3] - data.rect[1] + page.view[1], data.rect[2], page.view[3] - data.rect[3] + page.view[1]]);
       const {
         pageWidth,
         pageHeight,
@@ -16683,11 +16683,11 @@
         const fieldObj = this._fieldObjects[name];
         if (fieldObj) {
           for (const {
-            page: page2,
+            page,
             id,
             exportValues
           } of fieldObj) {
-            if (page2 === -1) {
+            if (page === -1) {
               continue;
             }
             if (id === skipId) {
@@ -19129,7 +19129,7 @@
       accessibilityManager,
       annotationCanvasMap,
       annotationEditorUIManager,
-      page: page2,
+      page,
       viewport,
       structTreeLayer,
       commentManager,
@@ -19142,7 +19142,7 @@
       this.#structTreeLayer = structTreeLayer || null;
       this.#linkService = linkService || null;
       this.#annotationStorage = annotationStorage || new AnnotationStorage();
-      this.page = page2;
+      this.page = page;
       this.viewport = viewport;
       this.zIndex = 0;
       this._annotationEditorUIManager = annotationEditorUIManager;
@@ -25808,18 +25808,24 @@
   var vscode = acquireVsCodeApi();
   var app = document.getElementById("app");
   var renderPixelRatio = 2;
-  var page = 1;
-  var zoom = 1;
-  var renderedZoom = 1;
-  var scrollTop = 0;
-  var scrollLeft = 0;
+  var minZoom = 0.25;
+  var maxZoom = 5;
+  var reportDelayMs = 250;
+  var restored = window.__remarkableViewState;
+  var zoom = clamp(restored?.zoom, 1, minZoom, maxZoom);
+  var renderedZoom = zoom;
+  var scrollTop = clamp(restored?.scrollTop, 0, 0, Number.MAX_SAFE_INTEGER);
+  var scrollLeft = clamp(restored?.scrollLeft, 0, 0, Number.MAX_SAFE_INTEGER);
   var currentUri;
   var renderGeneration = 0;
   var zoomTimer;
+  var reportTimer;
+  var pagesVisible = false;
   GlobalWorkerOptions.workerSrc = window.__remarkableWorkerUri;
   window.addEventListener("message", (event) => {
     const message = event.data;
     if (message.type === "loading") {
+      pagesVisible = false;
       app.replaceChildren(text("p", "Loading reMarkable preview\u2026"));
     }
     if (message.type === "error") {
@@ -25852,6 +25858,7 @@
       }
       app.replaceChildren(fragment);
       renderedZoom = targetZoom;
+      pagesVisible = true;
       app.scrollLeft = scrollLeft;
       app.scrollTop = scrollTop;
     } catch (error) {
@@ -25861,6 +25868,7 @@
     }
   }
   function showError(message) {
+    pagesVisible = false;
     const retry = text("button", "Retry");
     retry.addEventListener("click", () => vscode.postMessage({ type: "retry" }));
     const log = text("button", "Open Output Log");
@@ -25874,12 +25882,24 @@
     element.textContent = contents;
     return element;
   }
+  function clamp(value, fallback, min, max) {
+    return typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+  }
+  function reportViewState() {
+    if (reportTimer) {
+      return;
+    }
+    reportTimer = setTimeout(() => {
+      reportTimer = void 0;
+      vscode.postMessage({ type: "viewState", zoom, scrollTop, scrollLeft });
+    }, reportDelayMs);
+  }
   app.addEventListener("wheel", (event) => {
     if (!event.ctrlKey || !currentUri) {
       return;
     }
     event.preventDefault();
-    const nextZoom = Math.min(5, Math.max(0.25, zoom * Math.exp(-event.deltaY * 0.01)));
+    const nextZoom = Math.min(maxZoom, Math.max(minZoom, zoom * Math.exp(-event.deltaY * 0.01)));
     if (Math.abs(nextZoom - zoom) < 1e-3) {
       return;
     }
@@ -25895,6 +25915,7 @@
     app.scrollTop = (app.scrollTop + y) * ratio - y;
     scrollLeft = app.scrollLeft;
     scrollTop = app.scrollTop;
+    reportViewState();
     if (zoomTimer) {
       clearTimeout(zoomTimer);
     }
@@ -25906,8 +25927,11 @@
     }, 80);
   }, { passive: false });
   app.addEventListener("scroll", () => {
+    if (!pagesVisible) {
+      return;
+    }
     scrollTop = app.scrollTop;
     scrollLeft = app.scrollLeft;
-    vscode.postMessage({ type: "viewState", page, zoom, scrollTop });
+    reportViewState();
   });
 })();

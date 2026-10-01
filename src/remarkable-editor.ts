@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { EditorController, isIncomingEditorMessage } from './editor-controller';
 import { SourceMetadata } from './fingerprint';
 import { CachedRenderResult, createRendererBackend, RenderService } from './render-service';
+import { PreviewViewState, ViewStateStore } from './view-state';
 
 export const REMARKABLE_EDITOR_VIEW_TYPE = 'remarkablePreview.editor';
 const SOURCE_POLL_INTERVAL_MS = 2_000;
@@ -23,6 +24,7 @@ interface SourceState {
 export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProvider<RemarkableDocument>, vscode.Disposable {
 	private readonly sources = new Map<string, SourceState>();
 	private readonly disposables: vscode.Disposable[] = [];
+	private readonly viewStates: ViewStateStore;
 
 	public constructor(
 		private readonly context: vscode.ExtensionContext,
@@ -30,7 +32,9 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 		private readonly cacheDirectory: string,
 		private readonly output: vscode.OutputChannel,
 		private readonly cleanup: (protectedPaths: ReadonlySet<string>) => void,
-	) {}
+	) {
+		this.viewStates = new ViewStateStore(context.workspaceState);
+	}
 
 	public openCustomDocument(uri: vscode.Uri): RemarkableDocument { return { uri, dispose: () => {} }; }
 
@@ -39,7 +43,9 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 		if (source.scheme !== 'file') { throw new Error('reMarkable Preview requires a file available to the extension host.'); }
 		const state = this.ensure(source);
 		panel.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media'), vscode.Uri.file(this.cacheDirectory)] };
-		panel.webview.html = this.html(panel.webview);
+		// Seeded through the HTML rather than a message so the viewer knows where to
+		// scroll before the first page is rendered.
+		panel.webview.html = this.html(panel.webview, this.viewStates.get(source.toString()));
 		const unsubscribe = state.controller.add({ post: message => {
 			const outgoing = message.type === 'pdf'
 				? { ...message, uri: panel.webview.asWebviewUri(vscode.Uri.file(message.uri)).toString() }
@@ -50,6 +56,9 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 			if (!isIncomingEditorMessage(message)) { this.log('ignored invalid webview message', source); return; }
 			if (message.type === 'retry') { void this.render(source, true); }
 			if (message.type === 'openOutput') { this.output.show(true); }
+			if (message.type === 'viewState') {
+				this.viewStates.remember(source.toString(), { zoom: message.zoom, scrollTop: message.scrollTop, scrollLeft: message.scrollLeft });
+			}
 		});
 		panel.onDidDispose(() => {
 			unsubscribe(); messageListener.dispose();
@@ -65,7 +74,7 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 		return new Set([...this.sources.values()].flatMap(state => state.pdfPath ? [state.pdfPath] : []));
 	}
 
-	public dispose(): void { for (const source of [...this.sources.keys()]) { this.stop(vscode.Uri.parse(source)); } for (const item of this.disposables) { item.dispose(); } }
+	public dispose(): void { for (const source of [...this.sources.keys()]) { this.stop(vscode.Uri.parse(source)); } for (const item of this.disposables) { item.dispose(); } this.viewStates.dispose(); }
 
 	private ensure(source: vscode.Uri): SourceState {
 		const key = source.toString();
@@ -150,12 +159,12 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 
 	private stop(source: vscode.Uri): void { const state = this.sources.get(source.toString()); if (!state) { return; } if (state.timer) { clearTimeout(state.timer); } if (state.poller) { clearInterval(state.poller); } state.watcher?.dispose(); this.sources.delete(source.toString()); }
 	private log(message: string, source?: vscode.Uri): void { this.output.appendLine(`${new Date().toISOString()} ${message}${source ? `: ${source.fsPath}` : ''}`); }
-	private html(webview: vscode.Webview): string {
+	private html(webview: vscode.Webview, view?: PreviewViewState): string {
 		const script = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'preview.js'));
 		const style = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'preview.css'));
 		const worker = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'pdfjs', 'pdf.worker.mjs'));
 		const nonce = randomNonce();
-		return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; img-src ${webview.cspSource} blob: data:; script-src 'nonce-${nonce}'; worker-src ${webview.cspSource} blob:; connect-src ${webview.cspSource};"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${style}"></head><body><main id="app"><p>Loading reMarkable preview…</p></main><script nonce="${nonce}">window.__remarkableWorkerUri=${JSON.stringify(worker.toString())};</script><script nonce="${nonce}" src="${script}"></script></body></html>`;
+		return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; img-src ${webview.cspSource} blob: data:; script-src 'nonce-${nonce}'; worker-src ${webview.cspSource} blob:; connect-src ${webview.cspSource};"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${style}"></head><body><main id="app"><p>Loading reMarkable preview…</p></main><script nonce="${nonce}">window.__remarkableWorkerUri=${JSON.stringify(worker.toString())};window.__remarkableViewState=${JSON.stringify(view ?? null)};</script><script nonce="${nonce}" src="${script}"></script></body></html>`;
 	}
 }
 

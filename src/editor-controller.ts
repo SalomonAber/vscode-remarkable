@@ -1,3 +1,5 @@
+import { isPreviewViewState, PreviewViewState } from './view-state';
+
 /**
  * Small, VS Code-independent lifecycle helper for custom-editor views. Keeping
  * this separate makes the important stale/disposal behaviour cheap to test.
@@ -11,15 +13,13 @@ export type EditorMessage =
 	| { type: 'error'; message: string }
 	| { type: 'loading' };
 
-export type IncomingEditorMessage = { type: 'retry' } | { type: 'openOutput' } | { type: 'viewState'; page: number; zoom: number; scrollTop: number };
+export type IncomingEditorMessage = { type: 'retry' } | { type: 'openOutput' } | ({ type: 'viewState' } & PreviewViewState);
 
 export function isIncomingEditorMessage(value: unknown): value is IncomingEditorMessage {
 	if (!value || typeof value !== 'object') { return false; }
 	const message = value as Record<string, unknown>;
 	if (message.type === 'retry' || message.type === 'openOutput') { return Object.keys(message).length === 1; }
-	return message.type === 'viewState'
-		&& Object.keys(message).length === 4
-		&& [message.page, message.zoom, message.scrollTop].every(item => typeof item === 'number' && Number.isFinite(item));
+	return message.type === 'viewState' && Object.keys(message).length === 4 && isPreviewViewState(message);
 }
 
 export function escapeHtml(value: string): string {
