@@ -11,7 +11,7 @@ class Storage {
 	public stored(): Record<string, PreviewViewState> { return (this.value ?? {}) as Record<string, PreviewViewState>; }
 }
 
-const position = (scrollTop: number): PreviewViewState => ({ zoom: 1.5, scrollTop, scrollLeft: 12 });
+const position = (top: number): PreviewViewState => ({ page: 3, scale: 'page-width', top, left: 12 });
 
 test('a remembered position is returned for the same source', () => {
 	const store = new ViewStateStore();
@@ -23,8 +23,10 @@ test('a remembered position is returned for the same source', () => {
 test('positions survive a restart and ignore unusable persisted entries', () => {
 	const storage = new Storage({
 		'file:///workspace/kept.rmdoc': position(640),
-		'file:///workspace/partial.rmdoc': { zoom: 1, scrollTop: 0 },
-		'file:///workspace/broken.rmdoc': { zoom: Number.NaN, scrollTop: 0, scrollLeft: 0 },
+		'file:///workspace/partial.rmdoc': { page: 1, top: 0, left: 0 },
+		'file:///workspace/broken.rmdoc': { page: 1, scale: 'auto', top: Number.NaN, left: 0 },
+		// Written by the viewer before it tracked pdf.js destinations.
+		'file:///workspace/older.rmdoc': { zoom: 1, scrollTop: 400, scrollLeft: 0 },
 		'file:///workspace/hostile.rmdoc': 'not a position',
 	});
 	const store = new ViewStateStore(storage);
@@ -32,6 +34,7 @@ test('positions survive a restart and ignore unusable persisted entries', () => 
 	assert.deepEqual(store.get('file:///workspace/kept.rmdoc'), position(640));
 	assert.equal(store.get('file:///workspace/partial.rmdoc'), undefined);
 	assert.equal(store.get('file:///workspace/broken.rmdoc'), undefined);
+	assert.equal(store.get('file:///workspace/older.rmdoc'), undefined);
 	assert.equal(store.get('file:///workspace/hostile.rmdoc'), undefined);
 });
 
@@ -92,10 +95,13 @@ test('a store without storage still remembers for the session', () => {
 });
 
 test('view state is validated before it is trusted', () => {
-	assert.equal(isPreviewViewState({ zoom: 1, scrollTop: 0, scrollLeft: 0 }), true);
-	assert.equal(isPreviewViewState({ zoom: 1, scrollTop: 0, scrollLeft: 0, extra: true }), true);
-	assert.equal(isPreviewViewState({ zoom: 1, scrollTop: 0 }), false);
-	assert.equal(isPreviewViewState({ zoom: 1, scrollTop: 0, scrollLeft: Number.POSITIVE_INFINITY }), false);
-	assert.equal(isPreviewViewState({ zoom: '1', scrollTop: 0, scrollLeft: 0 }), false);
+	assert.equal(isPreviewViewState({ page: 1, scale: 'page-width', top: 0, left: 0 }), true);
+	assert.equal(isPreviewViewState({ page: 4, scale: '1.25', top: 120, left: -8 }), true);
+	assert.equal(isPreviewViewState({ page: 1, scale: 'auto', top: 0, left: 0, extra: true }), true);
+	assert.equal(isPreviewViewState({ page: 1, scale: 'auto', top: 0 }), false);
+	assert.equal(isPreviewViewState({ page: 0, scale: 'auto', top: 0, left: 0 }), false);
+	assert.equal(isPreviewViewState({ page: 1, scale: '', top: 0, left: 0 }), false);
+	assert.equal(isPreviewViewState({ page: 1, scale: 1.25, top: 0, left: 0 }), false);
+	assert.equal(isPreviewViewState({ page: 1, scale: 'auto', top: Number.POSITIVE_INFINITY, left: 0 }), false);
 	assert.equal(isPreviewViewState(null), false);
 });

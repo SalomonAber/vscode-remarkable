@@ -57,7 +57,7 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 			if (message.type === 'retry') { void this.render(source, true); }
 			if (message.type === 'openOutput') { this.output.show(true); }
 			if (message.type === 'viewState') {
-				this.viewStates.remember(source.toString(), { zoom: message.zoom, scrollTop: message.scrollTop, scrollLeft: message.scrollLeft });
+				this.viewStates.remember(source.toString(), { page: message.page, scale: message.scale, top: message.top, left: message.left });
 			}
 		});
 		panel.onDidDispose(() => {
@@ -162,9 +162,12 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 	private html(webview: vscode.Webview, view?: PreviewViewState): string {
 		const script = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'preview.js'));
 		const style = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'preview.css'));
+		const viewerStyle = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'pdfjs', 'pdf_viewer.css'));
 		const worker = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'pdfjs', 'pdf.worker.mjs'));
 		const nonce = randomNonce();
-		return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; img-src ${webview.cspSource} blob: data:; script-src 'nonce-${nonce}'; worker-src ${webview.cspSource} blob:; connect-src ${webview.cspSource};"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${style}"></head><body><main id="app"><p>Loading reMarkable preview…</p></main><script nonce="${nonce}">window.__remarkableWorkerUri=${JSON.stringify(worker.toString())};window.__remarkableViewState=${JSON.stringify(view ?? null)};</script><script nonce="${nonce}" src="${script}"></script></body></html>`;
+		// font-src covers embedded fonts that pdf.js has to fall back to declaring
+		// as data URLs; the text layer needs them to measure glyphs.
+		return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; font-src ${webview.cspSource} blob: data:; img-src ${webview.cspSource} blob: data:; script-src 'nonce-${nonce}'; worker-src ${webview.cspSource} blob:; connect-src ${webview.cspSource};"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${viewerStyle}"><link rel="stylesheet" href="${style}"></head><body><main id="app"><div id="viewerContainer"><div id="viewer" class="pdfViewer"></div></div><div id="status"><p>Loading reMarkable preview…</p></div></main><script nonce="${nonce}">window.__remarkableWorkerUri=${JSON.stringify(worker.toString())};window.__remarkableViewState=${JSON.stringify(view ?? null)};</script><script nonce="${nonce}" src="${script}"></script></body></html>`;
 	}
 }
 

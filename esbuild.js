@@ -47,7 +47,13 @@ async function main() {
 		entryPoints: ['media/preview.ts'], bundle: true, format: 'iife', platform: 'browser',
 		minify: production, sourcemap: false, outfile: 'media/preview.js', logLevel: 'silent',
 	});
-	const copyWorker = () => fs.mkdir('media/pdfjs', { recursive: true }).then(() => fs.copyFile('node_modules/pdfjs-dist/build/pdf.worker.mjs', 'media/pdfjs/pdf.worker.mjs'));
+	// pdf.js's viewer component positions its text and annotation layers from its
+	// own stylesheet, so it ships alongside the worker rather than being inlined.
+	const copyWorker = () => fs.mkdir('media/pdfjs', { recursive: true })
+		.then(() => Promise.all([
+			fs.copyFile('node_modules/pdfjs-dist/build/pdf.worker.mjs', 'media/pdfjs/pdf.worker.mjs'),
+			fs.copyFile('node_modules/pdfjs-dist/web/pdf_viewer.css', 'media/pdfjs/pdf_viewer.css'),
+		]));
 	if (watch) {
 		await ctx.watch();
 		await media.watch();

@@ -19,7 +19,7 @@ export function isIncomingEditorMessage(value: unknown): value is IncomingEditor
 	if (!value || typeof value !== 'object') { return false; }
 	const message = value as Record<string, unknown>;
 	if (message.type === 'retry' || message.type === 'openOutput') { return Object.keys(message).length === 1; }
-	return message.type === 'viewState' && Object.keys(message).length === 4 && isPreviewViewState(message);
+	return message.type === 'viewState' && Object.keys(message).length === 5 && isPreviewViewState(message);
 }
 
 export function escapeHtml(value: string): string {

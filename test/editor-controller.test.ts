@@ -39,9 +39,9 @@ test('refresh sends a new PDF to existing previews and failures have stable data
 test('retry and webview messages are strictly validated', () => {
 	assert.equal(isIncomingEditorMessage({ type: 'retry' }), true);
 	assert.equal(isIncomingEditorMessage({ type: 'openOutput' }), true);
-	assert.equal(isIncomingEditorMessage({ type: 'viewState', zoom: 1, scrollTop: 0, scrollLeft: 0 }), true);
-	assert.equal(isIncomingEditorMessage({ type: 'viewState', zoom: 1, scrollTop: 0 }), false);
-	assert.equal(isIncomingEditorMessage({ type: 'viewState', zoom: 1, scrollTop: 0, scrollLeft: 0, extra: true }), false);
+	assert.equal(isIncomingEditorMessage({ type: 'viewState', page: 1, scale: 'page-width', top: 0, left: 0 }), true);
+	assert.equal(isIncomingEditorMessage({ type: 'viewState', page: 1, scale: 'page-width', top: 0 }), false);
+	assert.equal(isIncomingEditorMessage({ type: 'viewState', page: 1, scale: 'page-width', top: 0, left: 0, extra: true }), false);
 	assert.equal(isIncomingEditorMessage({ type: 'retry', extra: true }), false);
 	assert.equal(isIncomingEditorMessage({ type: 'pdf', uri: 'file:///etc/passwd' }), false);
 	assert.equal(isIncomingEditorMessage(null), false);

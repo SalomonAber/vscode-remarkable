@@ -1,6 +1,14 @@
 html, body, #app { height: 100%; margin: 0; }
 body { color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); }
-#app { overflow: auto; box-sizing: border-box; padding: 1rem; text-align: center; }
-canvas { display: block; height: auto; margin: 0 auto 1rem; background: white; box-shadow: 0 1px 5px #0007; }
+#app { position: relative; overflow: hidden; }
+
+/* pdf.js lays its pages out against an absolutely positioned scroll container. */
+#viewerContainer { position: absolute; inset: 0; overflow: auto; }
+.pdfViewer .page { margin: 0 auto 1rem; border: 0; background: white; box-shadow: 0 1px 5px #0007; }
+.pdfViewer .page:first-child { margin-top: 1rem; }
+
+/* Covers the pages while rendering or after a failure, so no chrome is needed. */
+#status { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; text-align: center; background: var(--vscode-editor-background); }
+#status.hidden { display: none; }
 button { margin: .25rem; padding: .4rem .8rem; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; border-radius: 2px; cursor: pointer; }
-.detail { white-space: pre-wrap; text-align: left; }
+.detail { white-space: pre-wrap; text-align: left; max-width: 60ch; }

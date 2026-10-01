@@ -6,9 +6,11 @@
  */
 
 export interface PreviewViewState {
-	zoom: number;
-	scrollTop: number;
-	scrollLeft: number;
+	page: number;
+	/** pdf.js's `currentScaleValue`, so a fitting mode like `page-width` survives as itself. */
+	scale: string;
+	top: number;
+	left: number;
 }
 
 /** The slice of `vscode.Memento` this needs, so tests can supply their own. */
@@ -25,7 +27,9 @@ const MAX_REMEMBERED = 200;
 export function isPreviewViewState(value: unknown): value is PreviewViewState {
 	if (!value || typeof value !== 'object') { return false; }
 	const state = value as Record<string, unknown>;
-	return [state.zoom, state.scrollTop, state.scrollLeft].every(item => typeof item === 'number' && Number.isFinite(item));
+	return typeof state.scale === 'string' && state.scale.length > 0
+		&& [state.page, state.top, state.left].every(item => typeof item === 'number' && Number.isFinite(item))
+		&& (state.page as number) >= 1;
 }
 
 export class ViewStateStore {
