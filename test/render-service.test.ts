@@ -7,6 +7,7 @@ import { RenderCache } from '../src/cache';
 import { SourceFingerprintCache } from '../src/fingerprint';
 import { createRendererBackend, RendererBackend, RenderRequest, RenderService } from '../src/render-service';
 import { RendererIdentityCache } from '../src/renderer';
+import { bundle, content, metadata, page } from './rmdoc-bundle';
 
 function request(
 	source: string,
@@ -70,6 +71,43 @@ test('changed source metadata and contents create a new warmed render', async ()
 
 		assert.equal(renders, 2);
 		assert.notEqual(changed.pdfPath, initial.pdfPath);
+	} finally {
+		await fs.rm(directory, { recursive: true, force: true });
+	}
+});
+
+test('reading a document on the tablet reuses the cached render', async () => {
+	const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'remarkable-render-service-reopened-'));
+	try {
+		let renders = 0;
+		const service = new RenderService(
+			new RenderCache(directory),
+			new SourceFingerprintCache(),
+			new RendererIdentityCache(async () => 'renderer-v1'),
+			async (_executable, _contents, outputPath) => {
+				renders += 1;
+				await fs.writeFile(outputPath, `%PDF-${renders}`);
+			},
+		);
+		const source = 'file:///workspace/note.rmdoc';
+		const strokes = page('%RM-strokes-page-1');
+		const drawn = bundle([strokes, content({ customZoomScale: 1 }), metadata({ lastOpened: '1700000000000' })]);
+		// Scrolling rewrites the saved viewport and the open timestamp, so the file
+		// the watcher sees is bigger, newer and byte-different without the drawing
+		// having changed. A re-export repacks the members on top of that.
+		const scrolled = bundle(
+			[metadata({ lastOpened: '1700000900000', lastOpenedPage: 7 }), content({ customZoomScale: 2.5, zoomMode: 'customFit' }), { ...strokes, stored: true }],
+			{ comment: 'exported again' },
+		);
+
+		const first = await service.getOrRender(request(source, drawn, 'reMder-client', 100));
+		service.invalidate(source);
+		const second = await service.getOrRender(request(source, scrolled, 'reMder-client', 200));
+
+		assert.notEqual(Buffer.compare(drawn, scrolled), 0);
+		assert.equal(renders, 1);
+		assert.equal(second.pdfPath, first.pdfPath);
+		assert.equal(second.contentHash, first.contentHash);
 	} finally {
 		await fs.rm(directory, { recursive: true, force: true });
 	}

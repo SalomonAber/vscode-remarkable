@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { hashDocumentContents } from './rmdoc';
 
 export interface SourceMetadata {
 	size: number;
@@ -34,6 +34,11 @@ export class SourceFingerprintCache {
 	}
 }
 
+/**
+ * Size and mtime only tell us the file moved; the hash tells us whether the
+ * document did. It describes the bundle's content rather than its bytes, so a
+ * scroll, a zoom or a re-export on the tablet keeps the same render.
+ */
 export function hashContents(contents: Uint8Array): string {
-	return createHash('sha256').update(contents).digest('hex');
+	return hashDocumentContents(contents);
 }

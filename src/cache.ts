@@ -123,8 +123,11 @@ function stableStringify(value: unknown): string {
 		return `[${value.map(stableStringify).join(',')}]`;
 	}
 	if (value !== null && typeof value === 'object') {
+		// Code-point order, not localeCompare: collation depends on the host's
+		// locale and can rank two keys equal, which would make the key depend on
+		// where the extension host happens to be running.
 		const entries = Object.entries(value as Record<string, unknown>)
-			.sort(([left], [right]) => left.localeCompare(right))
+			.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
 			.map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`);
 		return `{${entries.join(',')}}`;
 	}
