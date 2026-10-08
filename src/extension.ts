@@ -6,7 +6,6 @@ import { WorkspaceCacheWarmer } from './cache-warmer';
 import { SourceFingerprintCache } from './fingerprint';
 import { RemarkableEditorProvider, REMARKABLE_EDITOR_VIEW_TYPE } from './remarkable-editor';
 import { RenderService } from './render-service';
-import { RendererIdentityCache } from './renderer';
 
 const OPEN_PREVIEW = 'remarkablePreview.openPreview';
 const OPEN_PREVIEW_TO_SIDE = 'remarkablePreview.openPreviewToSide';
@@ -17,8 +16,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	const output = vscode.window.createOutputChannel('reMarkable Preview');
 	const cacheDirectory = getCacheDirectory(context);
 	const cache = new RenderCache(cacheDirectory);
-	const identities = new RendererIdentityCache();
-	const renders = new RenderService(cache, new SourceFingerprintCache(), identities);
+	const renders = new RenderService(cache, new SourceFingerprintCache());
 	const provider = new RemarkableEditorProvider(context, renders, cacheDirectory, output,
 		protectedPaths => void cleanupCache(cache, protectedPaths, vscode.workspace.getConfiguration('remarkablePreview').get<number>('cacheMaxSizeMB', 500), output));
 	const warmer = new WorkspaceCacheWarmer(renders, output,
@@ -71,11 +69,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.commands.registerCommand(REFRESH_PREVIEW, refresh),
 		vscode.commands.registerCommand(EXPORT_PDF, (resource?: vscode.Uri) => exportPdf(resource)),
 		vscode.workspace.onDidChangeConfiguration(event => {
-			if (event.affectsConfiguration('remarkablePreview.remderPath')) {
-				identities.invalidate();
-				output.appendLine(`${new Date().toISOString()} renderer path changed; identity cache invalidated`);
-				void warmer.scan();
-			}
+			if (event.affectsConfiguration('remarkablePreview.remderPath')) { void warmer.scan(); }
 			if (event.affectsConfiguration('remarkablePreview.backgroundRemderPath')) { void warmer.scan(); }
 			if (event.affectsConfiguration('remarkablePreview.prewarmCache')) { void warmer.scan(); }
 		}),

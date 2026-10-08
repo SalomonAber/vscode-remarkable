@@ -82,7 +82,7 @@ export class WorkspaceCacheWarmer implements vscode.Disposable {
 					const configuration = vscode.workspace.getConfiguration('remarkablePreview', source);
 					const foregroundExecutable = configuration.get<string>('remderPath', 'reMder-client');
 					const backgroundExecutable = configuration.get<string>('backgroundRemderPath', '').trim() || foregroundExecutable;
-					const backend = createRendererBackend(backgroundExecutable, { cacheIdentity: foregroundExecutable });
+					const backend = createRendererBackend(backgroundExecutable);
 					await this.renders.getOrRender({
 						source: key,
 						metadata,

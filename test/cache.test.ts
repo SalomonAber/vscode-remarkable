@@ -6,15 +6,11 @@ import { test } from 'node:test';
 import { calculateCacheKey, getCachePath, RenderCache } from '../src/cache';
 
 test('cache key changes when content changes', () => {
-	const settings = { remderPath: 'reMder-client' };
-	assert.notEqual(calculateCacheKey(Buffer.from('first'), 'renderer-v1', settings), calculateCacheKey(Buffer.from('second'), 'renderer-v1', settings));
+	assert.notEqual(calculateCacheKey(Buffer.from('first')), calculateCacheKey(Buffer.from('second')));
 });
 
-test('identical content and settings produce an identical cache key', () => {
-	assert.equal(
-		calculateCacheKey(Buffer.from('same'), 'renderer-v1', { quality: 1, color: true }),
-		calculateCacheKey(Buffer.from('same'), 'renderer-v1', { color: true, quality: 1 }),
-	);
+test('identical content produces an identical cache key', () => {
+	assert.equal(calculateCacheKey(Buffer.from('same')), calculateCacheKey(Buffer.from('same')));
 });
 
 test('cache path is confined to the cache directory', async () => {

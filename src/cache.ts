@@ -4,18 +4,24 @@ import * as path from 'node:path';
 
 export type RenderOperation = (temporaryPath: string) => Promise<void>;
 
-export function calculateCacheKey(contents: Uint8Array, rendererIdentity: string, renderSettings: unknown): string {
-	return calculateCacheKeyForContentHash(createHash('sha256').update(contents).digest('hex'), rendererIdentity, renderSettings);
+/**
+ * Bump to discard every existing entry on purpose. Keys describe the document
+ * and nothing else: the renderer used to contribute a hash of its executable,
+ * but `reMder-client` is a generated wrapper script whose bytes move whenever
+ * one of its dependencies is rebuilt, so that hash invalidated the whole cache
+ * on days when nothing about rendering had changed. A renderer that really does
+ * start drawing differently is rare enough to handle with a forced refresh.
+ */
+const CACHE_KEY_SCHEME = 'rmdoc-render-v2';
+
+export function calculateCacheKey(contents: Uint8Array): string {
+	return calculateCacheKeyForContentHash(createHash('sha256').update(contents).digest('hex'));
 }
 
-export function calculateCacheKeyForContentHash(contentHash: string, rendererIdentity: string, renderSettings: unknown): string {
+export function calculateCacheKeyForContentHash(contentHash: string): string {
 	const hash = createHash('sha256');
-	hash.update('rmdoc-content-sha256\0');
+	hash.update(`${CACHE_KEY_SCHEME}\0rmdoc-content-sha256\0`);
 	hash.update(contentHash);
-	hash.update('\0renderer-identity\0');
-	hash.update(rendererIdentity);
-	hash.update('\0render-settings\0');
-	hash.update(stableStringify(renderSettings));
 	return hash.digest('hex');
 }
 
@@ -116,20 +122,4 @@ async function isValidCacheEntry(filePath: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
-}
-
-function stableStringify(value: unknown): string {
-	if (Array.isArray(value)) {
-		return `[${value.map(stableStringify).join(',')}]`;
-	}
-	if (value !== null && typeof value === 'object') {
-		// Code-point order, not localeCompare: collation depends on the host's
-		// locale and can rank two keys equal, which would make the key depend on
-		// where the extension host happens to be running.
-		const entries = Object.entries(value as Record<string, unknown>)
-			.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-			.map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`);
-		return `{${entries.join(',')}}`;
-	}
-	return JSON.stringify(value) ?? 'undefined';
 }

@@ -21,8 +21,8 @@ test('changed metadata causes a content rehash and changed content gets a new re
 	assert.equal(second.reused, false);
 	assert.notEqual(first.contentHash, second.contentHash);
 	assert.notEqual(
-		calculateCacheKeyForContentHash(first.contentHash, 'renderer', {}),
-		calculateCacheKeyForContentHash(second.contentHash, 'renderer', {}),
+		calculateCacheKeyForContentHash(first.contentHash),
+		calculateCacheKeyForContentHash(second.contentHash),
 	);
 });
 

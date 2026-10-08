@@ -6,7 +6,6 @@ import { test } from 'node:test';
 import { RenderCache } from '../src/cache';
 import { SourceFingerprintCache } from '../src/fingerprint';
 import { createRendererBackend, RendererBackend, RenderRequest, RenderService } from '../src/render-service';
-import { RendererIdentityCache } from '../src/renderer';
 import { bundle, content, metadata, page } from './rmdoc-bundle';
 
 function request(
@@ -31,7 +30,6 @@ test('background and interactive requests share the same cached render', async (
 		const service = new RenderService(
 			new RenderCache(directory),
 			new SourceFingerprintCache(),
-			new RendererIdentityCache(async () => 'renderer-v1'),
 			async (_executable, _contents, outputPath) => {
 				renders += 1;
 				await fs.writeFile(outputPath, `%PDF-${renders}`);
@@ -56,7 +54,6 @@ test('changed source metadata and contents create a new warmed render', async ()
 		const service = new RenderService(
 			new RenderCache(directory),
 			new SourceFingerprintCache(),
-			new RendererIdentityCache(async () => 'renderer-v1'),
 			async (_executable, _contents, outputPath) => {
 				renders += 1;
 				await fs.writeFile(outputPath, `%PDF-${renders}`);
@@ -83,7 +80,6 @@ test('reading a document on the tablet reuses the cached render', async () => {
 		const service = new RenderService(
 			new RenderCache(directory),
 			new SourceFingerprintCache(),
-			new RendererIdentityCache(async () => 'renderer-v1'),
 			async (_executable, _contents, outputPath) => {
 				renders += 1;
 				await fs.writeFile(outputPath, `%PDF-${renders}`);
@@ -124,7 +120,6 @@ test('different client commands targeting one renderer instance are serialized',
 		const service = new RenderService(
 			new RenderCache(directory),
 			new SourceFingerprintCache(),
-			new RendererIdentityCache(async () => 'renderer-v1'),
 			async (_executable, contents, outputPath) => {
 				const document = Buffer.from(contents).toString('utf8');
 				started.push(document);
@@ -156,7 +151,7 @@ test('different client commands targeting one renderer instance are serialized',
 	}
 });
 
-test('separate renderer instances can render concurrently and share cache identity', async () => {
+test('separate renderer instances can render concurrently and share cached renders', async () => {
 	const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'remarkable-render-service-instances-'));
 	let releaseForeground = () => {};
 	try {
@@ -167,7 +162,6 @@ test('separate renderer instances can render concurrently and share cache identi
 		const service = new RenderService(
 			new RenderCache(directory),
 			new SourceFingerprintCache(),
-			new RendererIdentityCache(async executable => `identity:${executable}`),
 			async (executable, contents, outputPath) => {
 				started.push(executable);
 				if (executable === 'foreground-client') {
@@ -182,7 +176,7 @@ test('separate renderer instances can render concurrently and share cache identi
 		await foregroundDidStart;
 		const backgroundContents = Buffer.from('background');
 		const backgroundRequest = request('file:///workspace/background.rmdoc', backgroundContents, 'background-client', 100,
-			createRendererBackend('background-client', { cacheIdentity: 'foreground-client' }));
+			createRendererBackend('background-client'));
 		await service.getOrRender(backgroundRequest);
 
 		assert.deepEqual(started, ['foreground-client', 'background-client']);
@@ -194,6 +188,35 @@ test('separate renderer instances can render concurrently and share cache identi
 		assert.match(warmed.pdfPath, /\.pdf$/);
 	} finally {
 		releaseForeground();
+		await fs.rm(directory, { recursive: true, force: true });
+	}
+});
+
+test('a rebuilt renderer reuses the cached render', async () => {
+	const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'remarkable-render-service-rebuilt-'));
+	try {
+		let renders = 0;
+		const service = new RenderService(
+			new RenderCache(directory),
+			new SourceFingerprintCache(),
+			async (_executable, _contents, outputPath) => {
+				renders += 1;
+				await fs.writeFile(outputPath, `%PDF-${renders}`);
+			},
+		);
+		const source = 'file:///workspace/note.rmdoc';
+		const contents = Buffer.from('rmdoc contents');
+		// The client is a wrapper script, so a dependency bump gives it a new path
+		// and new bytes without changing how anything is drawn. Keys describe the
+		// document only, so yesterday's render still answers today's open.
+		const before = await service.getOrRender(request(source, contents, '/nix/store/aaa-reMder-client/bin/reMder-client'));
+		service.invalidate(source);
+		const after = await service.getOrRender(request(source, contents, '/nix/store/bbb-reMder-client/bin/reMder-client'));
+
+		assert.equal(renders, 1);
+		assert.equal(after.pdfPath, before.pdfPath);
+		assert.equal(after.contentHash, before.contentHash);
+	} finally {
 		await fs.rm(directory, { recursive: true, force: true });
 	}
 });

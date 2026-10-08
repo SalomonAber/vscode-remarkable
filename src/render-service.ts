@@ -1,6 +1,6 @@
 import { RenderCache, calculateCacheKeyForContentHash } from './cache';
 import { hashContents, SourceFingerprintCache, SourceMetadata } from './fingerprint';
-import { RendererIdentityCache, renderSnapshot } from './renderer';
+import { renderSnapshot } from './renderer';
 
 export interface CachedRenderResult {
 	contentHash: string;
@@ -13,8 +13,6 @@ export type SnapshotRenderer = (executable: string, contents: Uint8Array, output
 export interface RendererBackend {
 	executable: string;
 	instanceKey: string;
-	/** Executable whose output contract and binary identity this backend shares. */
-	cacheIdentity: string;
 }
 
 export interface RenderRequest {
@@ -28,12 +26,11 @@ export interface RenderRequest {
 
 export function createRendererBackend(
 	executable: string,
-	options: Partial<Pick<RendererBackend, 'instanceKey' | 'cacheIdentity'>> = {},
+	options: Partial<Pick<RendererBackend, 'instanceKey'>> = {},
 ): RendererBackend {
 	return {
 		executable,
 		instanceKey: options.instanceKey ?? executable,
-		cacheIdentity: options.cacheIdentity ?? executable,
 	};
 }
 
@@ -43,7 +40,6 @@ export class RenderService {
 	public constructor(
 		private readonly cache: RenderCache,
 		private readonly fingerprints: SourceFingerprintCache,
-		private readonly identities: RendererIdentityCache,
 		private readonly render: SnapshotRenderer = renderSnapshot,
 	) {}
 
@@ -58,15 +54,14 @@ export class RenderService {
 		}
 		const fingerprint = await this.fingerprints.get(source, metadata, read);
 		log(fingerprint.reused ? 'content hash reused from fingerprint' : 'content rehashed');
-		const identity = await this.identities.get(backend.cacheIdentity);
 		let contentHash = fingerprint.contentHash;
-		let key = calculateCacheKeyForContentHash(contentHash, identity, { remderPath: backend.cacheIdentity });
+		let key = calculateCacheKeyForContentHash(contentHash);
 		let hit = !force && await this.cache.hasValidEntry(key);
 		let sourceContents: Uint8Array | undefined;
 		if (!hit) {
 			sourceContents = fingerprint.contents ?? await read();
 			contentHash = hashContents(sourceContents);
-			key = calculateCacheKeyForContentHash(contentHash, identity, { remderPath: backend.cacheIdentity });
+			key = calculateCacheKeyForContentHash(contentHash);
 			hit = !force && await this.cache.hasValidEntry(key);
 		}
 		log(hit ? 'cache hit' : 'cache miss');
