@@ -109,6 +109,64 @@ test('reading a document on the tablet reuses the cached render', async () => {
 	}
 });
 
+test('a forced refresh reports the cache honestly and renders again', async () => {
+	const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'remarkable-render-service-forced-'));
+	try {
+		let renders = 0;
+		const service = new RenderService(
+			new RenderCache(directory),
+			new SourceFingerprintCache(),
+			async (_executable, _contents, outputPath) => {
+				renders += 1;
+				await fs.writeFile(outputPath, `%PDF-${renders}`);
+			},
+		);
+		const source = 'file:///workspace/note.rmdoc';
+		const contents = Buffer.from('rmdoc contents');
+		await service.getOrRender(request(source, contents));
+		const logs: string[] = [];
+		const refreshed = await service.getOrRender({ ...request(source, contents), force: true, log: message => logs.push(message) });
+
+		assert.equal(renders, 2);
+		// The entry was there and was good; this render passed it over on purpose,
+		// which is a thing to say about the refresh and not about the cache.
+		assert.deepEqual(logs.filter(message => message.startsWith('cache ')), ['cache hit']);
+		assert.ok(logs.includes('forced refresh; re-rendering anyway'));
+		assert.equal(await fs.readFile(refreshed.pdfPath, 'utf8'), '%PDF-2');
+	} finally {
+		await fs.rm(directory, { recursive: true, force: true });
+	}
+});
+
+test('an entry evicted under the size cap is rendered again on the next open', async () => {
+	const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'remarkable-render-service-evicted-'));
+	try {
+		let renders = 0;
+		const service = new RenderService(
+			new RenderCache(directory),
+			new SourceFingerprintCache(),
+			async (_executable, _contents, outputPath) => {
+				renders += 1;
+				await fs.writeFile(outputPath, `%PDF-${renders}`);
+			},
+		);
+		const source = 'file:///workspace/note.rmdoc';
+		const contents = Buffer.from('rmdoc contents');
+		const first = await service.getOrRender(request(source, contents));
+		// Eviction leaves the remembered fingerprint describing a file whose render
+		// is gone. The source itself never moved, so nothing invalidates it, and the
+		// reread behind a reused fingerprint is what recovers.
+		await fs.rm(first.pdfPath, { force: true });
+		const reopened = await service.getOrRender(request(source, contents));
+
+		assert.equal(renders, 2);
+		assert.equal(reopened.pdfPath, first.pdfPath);
+		assert.equal(reopened.contentHash, first.contentHash);
+	} finally {
+		await fs.rm(directory, { recursive: true, force: true });
+	}
+});
+
 test('different client commands targeting one renderer instance are serialized', async () => {
 	const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'remarkable-render-service-serial-'));
 	let releaseFirst = () => {};

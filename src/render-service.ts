@@ -56,15 +56,24 @@ export class RenderService {
 		log(fingerprint.reused ? 'content hash reused from fingerprint' : 'content rehashed');
 		let contentHash = fingerprint.contentHash;
 		let key = calculateCacheKeyForContentHash(contentHash);
-		let hit = !force && await this.cache.hasValidEntry(key);
-		let sourceContents: Uint8Array | undefined;
-		if (!hit) {
-			sourceContents = fingerprint.contents ?? await read();
+		let sourceContents = fingerprint.contents;
+		let cached = await this.cache.hasValidEntry(key);
+		// A reused fingerprint says only that the file has not moved, which is a
+		// guess about its contents; before rendering on the strength of that guess,
+		// reread and rehash. A fingerprint just computed already describes these
+		// exact bytes, so rehashing them would only repeat the work.
+		if (!cached && fingerprint.reused) {
+			sourceContents = await read();
 			contentHash = hashContents(sourceContents);
 			key = calculateCacheKeyForContentHash(contentHash);
-			hit = !force && await this.cache.hasValidEntry(key);
+			cached = await this.cache.hasValidEntry(key);
 		}
-		log(hit ? 'cache hit' : 'cache miss');
+		// Said of the cache rather than of this render, so that the forced refresh
+		// which deliberately ignores a good entry stops reporting itself as a miss.
+		log(cached ? 'cache hit' : 'cache miss');
+		if (cached && force) {
+			log('forced refresh; re-rendering anyway');
+		}
 		const pdfPath = await this.cache.getOrRender(key, async temporaryPath => {
 			const snapshot = sourceContents ?? await read();
 			await this.enqueueRender(backend.instanceKey, async () => {

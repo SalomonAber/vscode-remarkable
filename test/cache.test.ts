@@ -3,14 +3,14 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { calculateCacheKey, getCachePath, RenderCache } from '../src/cache';
+import { calculateCacheKeyForContentHash, getCachePath, RenderCache } from '../src/cache';
 
-test('cache key changes when content changes', () => {
-	assert.notEqual(calculateCacheKey(Buffer.from('first')), calculateCacheKey(Buffer.from('second')));
+test('cache key changes when the content hash changes', () => {
+	assert.notEqual(calculateCacheKeyForContentHash('first'), calculateCacheKeyForContentHash('second'));
 });
 
-test('identical content produces an identical cache key', () => {
-	assert.equal(calculateCacheKey(Buffer.from('same')), calculateCacheKey(Buffer.from('same')));
+test('an identical content hash produces an identical cache key', () => {
+	assert.equal(calculateCacheKeyForContentHash('same'), calculateCacheKeyForContentHash('same'));
 });
 
 test('cache path is confined to the cache directory', async () => {
@@ -110,6 +110,68 @@ test('cache cleanup removes oldest unused entries first', async () => {
 		assert.deepEqual(await cache.cleanup(8), [oldPath]);
 		await assert.rejects(fs.stat(oldPath));
 		await fs.stat(newPath);
+	});
+});
+
+test('serving an entry from the cache moves it to the back of the eviction queue', async () => {
+	await withCache(async (cache, directory) => {
+		const reopened = '6'.repeat(64);
+		const forgotten = '7'.repeat(64);
+		const render = (contents: string) => async (temporaryPath: string) => { await fs.writeFile(temporaryPath, contents); };
+		await cache.getOrRender(reopened, render('%PDF-warm'));
+		await cache.getOrRender(forgotten, render('%PDF-cold'));
+		const reopenedPath = getCachePath(directory, reopened);
+		const forgottenPath = getCachePath(directory, forgotten);
+		await fs.utimes(reopenedPath, new Date(1_000), new Date(1_000));
+		await fs.utimes(forgottenPath, new Date(2_000), new Date(2_000));
+
+		// Rendered first, but served since, so it is now the newer of the two.
+		await cache.getOrRender(reopened, render('%PDF-unused'));
+		assert.deepEqual(await cache.cleanup('%PDF-warm'.length), [forgottenPath]);
+		assert.equal(await fs.readFile(reopenedPath, 'utf8'), '%PDF-warm');
+	});
+});
+
+test('cache cleanup clears scratch left behind by a killed render', async () => {
+	await withCache(async (cache, directory) => {
+		const abandoned = getCachePath(directory, '8'.repeat(64));
+		await fs.writeFile(`${abandoned}.tmp`, '%PDF-partial');
+		await fs.writeFile(`${abandoned}.tmp.input.rmdoc`, 'PK-source-snapshot');
+
+		// Nothing is over the cap, so only the rubble should go.
+		assert.deepEqual(
+			(await cache.cleanup(1024 * 1024)).sort(),
+			[`${abandoned}.tmp`, `${abandoned}.tmp.input.rmdoc`].sort(),
+		);
+		await assert.rejects(fs.stat(`${abandoned}.tmp`));
+		await assert.rejects(fs.stat(`${abandoned}.tmp.input.rmdoc`));
+	});
+});
+
+test('cache cleanup leaves the scratch of a render still in flight alone', async () => {
+	await withCache(async (cache, directory) => {
+		const key = '9'.repeat(64);
+		let release: (() => void) | undefined;
+		let reportScratch: (() => void) | undefined;
+		const blocked = new Promise<void>(resolve => { release = resolve; });
+		// The cache opens the directory and clears any previous scratch before it
+		// calls the renderer, so the scratch has to announce itself rather than be
+		// waited for by a turn of the event loop.
+		const scratchWritten = new Promise<void>(resolve => { reportScratch = resolve; });
+		const inFlight = cache.getOrRender(key, async temporaryPath => {
+			await fs.writeFile(temporaryPath, '%PDF-partial');
+			await fs.writeFile(`${temporaryPath}.input.rmdoc`, 'PK-source-snapshot');
+			reportScratch?.();
+			await blocked;
+			await fs.writeFile(temporaryPath, '%PDF-complete');
+		});
+		await scratchWritten;
+
+		assert.deepEqual(await cache.cleanup(1024 * 1024), []);
+		await fs.stat(`${getCachePath(directory, key)}.tmp`);
+		await fs.stat(`${getCachePath(directory, key)}.tmp.input.rmdoc`);
+		release?.();
+		assert.equal(await fs.readFile(await inFlight, 'utf8'), '%PDF-complete');
 	});
 });
 
