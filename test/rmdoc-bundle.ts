@@ -16,11 +16,39 @@ export function page(strokes: string, id = 'page-1'): Member {
 	return { name: `${DOCUMENT}/${id}.rm`, data: strokes };
 }
 
+/**
+ * One entry of `cPages.pages`, with the CRDT envelopes and the save timestamp a
+ * tablet really writes. `modifed` is the tablet's spelling, not a typo here.
+ */
+export function notebookPage(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	return {
+		id: 'page-1',
+		idx: { timestamp: '1:2', value: 'ba' },
+		modifed: '1779197712311',
+		template: { timestamp: '1:1', value: 'Blank' },
+		...overrides,
+	};
+}
+
+/**
+ * The `cPages` tree as `formatVersion: 2` writes it: the read cursor, the device
+ * table behind the CRDT clocks, and the pages themselves.
+ */
+export function cPages(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	return {
+		lastOpened: { timestamp: '2:1', value: 'page-1' },
+		original: { timestamp: '0:0', value: -1 },
+		pages: [notebookPage()],
+		uuids: [{ first: '864017a9-82f9-5408-83c7-2b2a6e4c2274', second: 2 }],
+		...overrides,
+	};
+}
+
 export function content(overrides: Record<string, unknown> = {}): Member {
 	return {
 		name: `${DOCUMENT}.content`,
 		data: JSON.stringify({
-			cPages: { pages: [{ id: 'page-1', idx: { timestamp: '1:2', value: 'ba' } }] },
+			cPages: cPages(),
 			coverPageNumber: -1,
 			fileType: 'notebook',
 			formatVersion: 2,

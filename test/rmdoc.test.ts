@@ -1,7 +1,44 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { hashDocumentContents } from '../src/rmdoc';
-import { bundle, content, DOCUMENT, Member, metadata, page } from './rmdoc-bundle';
+import { bundle, content, cPages, DOCUMENT, Member, metadata, notebookPage, page } from './rmdoc-bundle';
+
+/** A one-page notebook whose only difference from the next is its `.content`. */
+function notebook(settings: Member): Buffer {
+	return bundle([page('%RM-strokes'), settings, metadata()]);
+}
+
+test('reading a notebook on the tablet keeps its content hash', () => {
+	// Opening a notebook moves the `cPages` read cursor, bumps the logical clock
+	// of every device that has touched the document and re-saves the page, all
+	// without changing a stroke. `formatVersion: 1` kept this state at the top
+	// level, where the deny-list reached it; version 2 nests it under `cPages`.
+	const before = notebook(content());
+	const after = notebook(content({
+		cPages: cPages({
+			lastOpened: { timestamp: '7:1', value: 'page-1' },
+			pages: [notebookPage({ idx: { timestamp: '9:2', value: 'ba' }, modifed: '1790586562072', template: { timestamp: '9:1', value: 'Blank' } })],
+			uuids: [{ first: '864017a9-82f9-5408-83c7-2b2a6e4c2274', second: 11 }],
+		}),
+	}));
+
+	assert.notEqual(Buffer.compare(before, after), 0);
+	assert.equal(hashDocumentContents(before), hashDocumentContents(after));
+});
+
+test('what a CRDT envelope carries still changes the hash', () => {
+	const base = notebook(content());
+	const reordered = notebook(content({ cPages: cPages({ pages: [notebookPage({ idx: { timestamp: '1:2', value: 'bb' } })] }) }));
+	const retemplated = notebook(content({ cPages: cPages({ pages: [notebookPage({ template: { timestamp: '1:1', value: 'LinesMedium' } })] }) }));
+	// `redir` maps a page onto a page of the imported PDF underneath it, and is an
+	// envelope this version never had to be told about.
+	const redirected = notebook(content({ cPages: cPages({ pages: [notebookPage({ redir: { timestamp: '1:3', value: 7 } })] }) }));
+	const elsewhere = notebook(content({ cPages: cPages({ pages: [notebookPage({ redir: { timestamp: '1:3', value: 8 } })] }) }));
+
+	assert.notEqual(hashDocumentContents(base), hashDocumentContents(reordered));
+	assert.notEqual(hashDocumentContents(base), hashDocumentContents(retemplated));
+	assert.notEqual(hashDocumentContents(redirected), hashDocumentContents(elsewhere));
+});
 
 test('a scrolled or zoomed document keeps its content hash', () => {
 	const read = bundle([

@@ -37,6 +37,17 @@ export const IGNORED_CONTENT_KEYS: readonly string[] = [
 ];
 
 /**
+ * The same bookkeeping as `IGNORED_CONTENT_KEYS`, for where `formatVersion: 2`
+ * put it: inside `cPages`, out of reach of a deny-list that only ever saw the
+ * top level. `lastOpened` is the page you stopped reading on and `uuids` is the
+ * table naming the devices that have edited the document, so both move when you
+ * merely open a notebook; `modifed` is a per-page save timestamp, in the
+ * tablet's own spelling. Dropped at any depth, because none of these names can
+ * describe something drawn on a page wherever it appears.
+ */
+export const IGNORED_NESTED_CONTENT_KEYS: readonly string[] = ['lastOpened', 'modifed', 'modified', 'uuids'];
+
+/**
  * `.metadata` is almost entirely sync bookkeeping — timestamps, pin and trash
  * state, cloud version counters — so it is allow-listed the other way round:
  * only the title can plausibly show up in a render.
@@ -83,6 +94,9 @@ function classify(name: string): MemberRole {
 	return 'bytes';
 }
 
+/** Which deny-list a member's JSON is read under; the two are inverses of each other. */
+type JsonScope = 'content' | 'metadata';
+
 /** Returns undefined when the member cannot be read as JSON, so the caller hashes its bytes. */
 function canonicalJsonMember(member: ArchiveMember, contents: Uint8Array): string | undefined {
 	const bytes = readMemberBytes(contents, member);
@@ -93,27 +107,50 @@ function canonicalJsonMember(member: ArchiveMember, contents: Uint8Array): strin
 	} catch {
 		return undefined;
 	}
-	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) { return canonicalJson(parsed); }
-	const metadata = member.name.toLowerCase().endsWith('.metadata');
-	const retained = Object.entries(parsed as Record<string, unknown>).filter(([key]) => metadata
+	const scope: JsonScope = member.name.toLowerCase().endsWith('.metadata') ? 'metadata' : 'content';
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) { return canonicalJson(parsed, scope); }
+	const retained = Object.entries(parsed as Record<string, unknown>).filter(([key]) => scope === 'metadata'
 		? RENDERED_METADATA_KEYS.includes(key)
 		: !IGNORED_CONTENT_KEYS.includes(key));
-	return canonicalJson(Object.fromEntries(retained));
+	return canonicalJson(Object.fromEntries(retained), scope);
 }
 
-/** JSON with object keys in code-point order, so whitespace and key order stop mattering. */
-function canonicalJson(value: unknown): string {
+/**
+ * JSON with object keys in code-point order, so whitespace and key order stop
+ * mattering, and — inside a `.content` — with the tablet's bookkeeping dropped
+ * at every depth rather than only at the top.
+ */
+function canonicalJson(value: unknown, scope: JsonScope): string {
 	if (Array.isArray(value)) {
-		return `[${value.map(canonicalJson).join(',')}]`;
+		return `[${value.map(item => canonicalJson(item, scope)).join(',')}]`;
 	}
 	if (value !== null && typeof value === 'object') {
-		const entries = Object.entries(value as Record<string, unknown>)
-			.filter(([, item]) => item !== undefined)
+		const object = value as Record<string, unknown>;
+		const unwrapped = scope === 'content' ? unwrapCrdtEnvelope(object) : object;
+		if (unwrapped !== object) { return canonicalJson(unwrapped, scope); }
+		const entries = Object.entries(object)
+			.filter(([key, item]) => item !== undefined && !(scope === 'content' && IGNORED_NESTED_CONTENT_KEYS.includes(key)))
 			.sort(([left], [right]) => compare(left, right))
-			.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`);
+			.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item, scope)}`);
 		return `{${entries.join(',')}}`;
 	}
 	return JSON.stringify(value) ?? 'null';
+}
+
+/**
+ * `formatVersion: 2` wraps each individual setting in a CRDT envelope: the value
+ * itself, plus the logical clock of the write that last set it. Only the value
+ * can reach a page, and the clock advances on writes a reader never sees, so the
+ * envelope is reduced to what it carries — which is also why the `uuids` table
+ * that names the devices behind those clocks is dropped with them.
+ *
+ * Matched on shape rather than by key so that envelopes this version has never
+ * met — `redir` on a page backed by an imported PDF, `deleted` on a removed one
+ * — keep their values counted without having to be listed here.
+ */
+function unwrapCrdtEnvelope(object: Record<string, unknown>): unknown {
+	const keys = Object.keys(object);
+	return keys.length === 2 && keys.includes('timestamp') && keys.includes('value') ? object.value : object;
 }
 
 function compare(left: string, right: string): number {

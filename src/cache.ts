@@ -11,8 +11,13 @@ export type RenderOperation = (temporaryPath: string) => Promise<void>;
  * one of its dependencies is rebuilt, so that hash invalidated the whole cache
  * on days when nothing about rendering had changed. A renderer that really does
  * start drawing differently is rare enough to handle with a forced refresh.
+ *
+ * v3: the content hash started dropping the bookkeeping `formatVersion: 2` nests
+ * inside `cPages`. Only version 2 documents really rehash, but keeping part of
+ * the cache under the previous canonicalisation to save one re-render apiece is
+ * a poor trade for leaving two generations of key in the same directory.
  */
-const CACHE_KEY_SCHEME = 'rmdoc-render-v2';
+const CACHE_KEY_SCHEME = 'rmdoc-render-v3';
 
 export function calculateCacheKey(contents: Uint8Array): string {
 	return calculateCacheKeyForContentHash(createHash('sha256').update(contents).digest('hex'));
