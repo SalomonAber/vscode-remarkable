@@ -26,6 +26,17 @@ const CACHE_KEY_SCHEME = 'rmdoc-render-v3';
  */
 const SCRATCH_PATTERN = /^([a-f0-9]{64})\.pdf\.tmp(\.input\.rmdoc)?$/;
 
+/**
+ * How long scratch must sit untouched before cleanup treats it as rubble.
+ * `inFlight` only knows the renders *this* window started, and the cache
+ * directory is shared by every window of the same install — so a peer's live
+ * render looks abandoned from here, and deleting its partial PDF out from under
+ * it fails that render with a complaint about the renderer. Comfortably longer
+ * than the longest run `renderTimeoutSeconds` will allow, so only genuinely
+ * stranded scratch ever gets old enough to qualify.
+ */
+const SCRATCH_GRACE_MS = 2 * 60 * 60 * 1_000;
+
 export function calculateCacheKeyForContentHash(contentHash: string): string {
 	const hash = createHash('sha256');
 	hash.update(`${CACHE_KEY_SCHEME}\0rmdoc-content-sha256\0`);
@@ -47,10 +58,15 @@ export class RenderCache {
 
 	public getOrRender(cacheKey: string, render: RenderOperation, force = false): Promise<string> {
 		const activeRender = this.inFlight.get(cacheKey);
-		if (activeRender) {
+		if (activeRender && !force) {
 			return activeRender;
 		}
-		const operation = this.render(cacheKey, render, force);
+		// A forced refresh is how you get past a render that may no longer be right,
+		// so answering it with the one already in flight would hand back exactly what
+		// it is refusing. Queue behind that render instead — and behind its failure
+		// too, which is the other thing a refresh is usually trying to get past.
+		const restart = () => this.render(cacheKey, render, force);
+		const operation = activeRender ? activeRender.then(restart, restart) : restart();
 		this.inFlight.set(cacheKey, operation);
 		const clearInFlight = () => {
 			if (this.inFlight.get(cacheKey) === operation) {
@@ -65,10 +81,12 @@ export class RenderCache {
 		return isValidCacheEntry(getCachePath(this.cacheDirectory, cacheKey));
 	}
 
+	/** Best effort throughout: whatever it managed to remove is reported even if it then gave up. */
 	public async cleanup(maxSizeBytes: number, protectedPaths: ReadonlySet<string> = new Set()): Promise<string[]> {
+		const removed: string[] = [];
 		try {
 			const entries = await fs.readdir(this.cacheDirectory, { withFileTypes: true });
-			const removed = await this.removeAbandonedScratch(entries);
+			removed.push(...await this.removeAbandonedScratch(entries));
 			const files = (await Promise.all(entries
 				.filter(entry => entry.isFile() && entry.name.endsWith('.pdf'))
 				.map(async entry => {
@@ -87,26 +105,33 @@ export class RenderCache {
 				total -= entry.stat.size;
 				removed.push(entry.filePath);
 			}
-			return removed;
-		} catch {
-			return [];
-		}
+		} catch {}
+		return removed;
 	}
 
 	/**
 	 * A render clears its own scratch as it succeeds or fails, but a process
 	 * killed mid-render cannot, and what it strands is a source-sized copy of the
 	 * bundle that the size cap never counted because it is not a `.pdf`. Scratch
-	 * belonging to no render currently in flight is therefore rubble.
+	 * belonging to no render in flight here, and untouched for long enough that no
+	 * other window can still be writing it, is therefore rubble.
 	 */
 	private async removeAbandonedScratch(entries: readonly Dirent[]): Promise<string[]> {
 		const removed: string[] = [];
+		const abandonedBefore = Date.now() - SCRATCH_GRACE_MS;
 		for (const entry of entries) {
 			const scratch = SCRATCH_PATTERN.exec(entry.name);
 			if (!entry.isFile() || !scratch || this.inFlight.has(scratch[1])) {
 				continue;
 			}
 			const filePath = path.join(this.cacheDirectory, entry.name);
+			try {
+				if ((await fs.stat(filePath)).mtimeMs > abandonedBefore) {
+					continue;
+				}
+			} catch {
+				continue;
+			}
 			await fs.rm(filePath, { force: true });
 			removed.push(filePath);
 		}

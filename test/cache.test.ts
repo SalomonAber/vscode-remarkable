@@ -137,6 +137,9 @@ test('cache cleanup clears scratch left behind by a killed render', async () => 
 		const abandoned = getCachePath(directory, '8'.repeat(64));
 		await fs.writeFile(`${abandoned}.tmp`, '%PDF-partial');
 		await fs.writeFile(`${abandoned}.tmp.input.rmdoc`, 'PK-source-snapshot');
+		const stranded = new Date(Date.now() - 3 * 60 * 60 * 1_000);
+		await fs.utimes(`${abandoned}.tmp`, stranded, stranded);
+		await fs.utimes(`${abandoned}.tmp.input.rmdoc`, stranded, stranded);
 
 		// Nothing is over the cap, so only the rubble should go.
 		assert.deepEqual(
@@ -145,6 +148,61 @@ test('cache cleanup clears scratch left behind by a killed render', async () => 
 		);
 		await assert.rejects(fs.stat(`${abandoned}.tmp`));
 		await assert.rejects(fs.stat(`${abandoned}.tmp.input.rmdoc`));
+	});
+});
+
+test('cache cleanup leaves scratch another window is still writing alone', async () => {
+	await withCache(async (cache, directory) => {
+		// One cache instance per window, one directory under globalStorage for all of
+		// them: a peer's live render is in no `inFlight` map this window can see, and
+		// deleting the partial PDF out from under it fails a render that was fine.
+		const peerWindow = new RenderCache(directory);
+		const key = 'a'.repeat(64);
+		let announced: (() => void) | undefined;
+		let release: (() => void) | undefined;
+		const scratchWritten = new Promise<void>(resolve => { announced = resolve; });
+		const blocked = new Promise<void>(resolve => { release = resolve; });
+		const inFlight = peerWindow.getOrRender(key, async temporaryPath => {
+			const handle = await fs.open(temporaryPath, 'w');
+			await handle.write('%PDF-page-1');
+			announced?.();
+			await blocked;
+			await handle.write('%PDF-page-2');
+			await handle.close();
+		});
+		await scratchWritten;
+
+		assert.deepEqual(await cache.cleanup(1024 * 1024), []);
+		release?.();
+		assert.match(await fs.readFile(await inFlight, 'utf8'), /^%PDF-page-1/);
+	});
+});
+
+test('a forced refresh during a render does not settle for that render', async () => {
+	await withCache(async cache => {
+		const key = 'a'.repeat(64);
+		let renders = 0;
+		let started: (() => void) | undefined;
+		let release: (() => void) | undefined;
+		const didStart = new Promise<void>(resolve => { started = resolve; });
+		const blocked = new Promise<void>(resolve => { release = resolve; });
+		const render = async (temporaryPath: string) => {
+			renders += 1;
+			if (renders === 1) { started?.(); await blocked; }
+			await fs.writeFile(temporaryPath, `%PDF-${renders}`);
+		};
+		// The background warmer is already rendering this document, possibly with the
+		// renderer the refresh exists to get past, so the refresh has to wait its turn
+		// rather than be answered with the very render it is refusing.
+		const warming = cache.getOrRender(key, render, false);
+		await didStart;
+		const refreshed = cache.getOrRender(key, render, true);
+		release?.();
+		const [warm, fresh] = await Promise.all([warming, refreshed]);
+
+		assert.equal(renders, 2);
+		assert.equal(warm, fresh);
+		assert.equal(await fs.readFile(fresh, 'utf8'), '%PDF-2');
 	});
 });
 
