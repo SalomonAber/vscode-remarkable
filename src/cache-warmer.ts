@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { renderTimeoutMs } from './configuration';
 import { createRendererBackend, RenderService } from './render-service';
 
 const CHANGE_DEBOUNCE_MS = 500;
@@ -82,7 +83,7 @@ export class WorkspaceCacheWarmer implements vscode.Disposable {
 					const configuration = vscode.workspace.getConfiguration('remarkablePreview', source);
 					const foregroundExecutable = configuration.get<string>('remderPath', 'reMder-client');
 					const backgroundExecutable = configuration.get<string>('backgroundRemderPath', '').trim() || foregroundExecutable;
-					const backend = createRendererBackend(backgroundExecutable);
+					const backend = createRendererBackend(backgroundExecutable, { timeoutMs: renderTimeoutMs(source) });
 					await this.renders.getOrRender({
 						source: key,
 						metadata,

@@ -8,11 +8,13 @@ export interface CachedRenderResult {
 }
 
 export type SourceReader = () => Promise<Uint8Array>;
-export type SnapshotRenderer = (executable: string, contents: Uint8Array, outputPath: string) => Promise<unknown>;
+export type SnapshotRenderer = (executable: string, contents: Uint8Array, outputPath: string, options?: { timeoutMs?: number }) => Promise<unknown>;
 
 export interface RendererBackend {
 	executable: string;
 	instanceKey: string;
+	/** Omitted means wait indefinitely; see `RenderOptions` for why that is a bad idea. */
+	timeoutMs?: number;
 }
 
 export interface RenderRequest {
@@ -26,11 +28,12 @@ export interface RenderRequest {
 
 export function createRendererBackend(
 	executable: string,
-	options: Partial<Pick<RendererBackend, 'instanceKey'>> = {},
+	options: Partial<Pick<RendererBackend, 'instanceKey' | 'timeoutMs'>> = {},
 ): RendererBackend {
 	return {
 		executable,
 		instanceKey: options.instanceKey ?? executable,
+		timeoutMs: options.timeoutMs,
 	};
 }
 
@@ -78,7 +81,7 @@ export class RenderService {
 			const snapshot = sourceContents ?? await read();
 			await this.enqueueRender(backend.instanceKey, async () => {
 				log('renderer started');
-				await this.render(backend.executable, snapshot, temporaryPath);
+				await this.render(backend.executable, snapshot, temporaryPath, { timeoutMs: backend.timeoutMs });
 				log('renderer completed');
 			});
 		}, force);

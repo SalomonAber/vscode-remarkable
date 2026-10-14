@@ -129,6 +129,14 @@
           "scope": "machine",
           "description": "Path or command name for a reMder-client connected to a separate renderer instance for background cache warming. Leave empty to share the foreground renderer safely."
         },
+        "remarkablePreview.renderTimeoutSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 10,
+          "maximum": 3600,
+          "scope": "machine",
+          "description": "How long a single reMder-client run may take before it is stopped. Without a limit, a wedged renderer blocks every other document and cannot be refreshed out of."
+        },
         "remarkablePreview.autoRefresh": {
           "type": "boolean",
           "default": true,

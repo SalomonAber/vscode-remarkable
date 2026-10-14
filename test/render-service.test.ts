@@ -167,6 +167,40 @@ test('an entry evicted under the size cap is rendered again on the next open', a
 	}
 });
 
+test('a render reads the source once, however the content hash was arrived at', async () => {
+	const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'remarkable-render-service-reads-'));
+	try {
+		let renders = 0;
+		const service = new RenderService(
+			new RenderCache(directory),
+			new SourceFingerprintCache(),
+			async (_executable, _contents, outputPath) => { renders += 1; await fs.writeFile(outputPath, '%PDF'); },
+		);
+		const contents = Buffer.from('rmdoc contents');
+		let reads = 0;
+		const open = () => service.getOrRender({
+			source: 'file:///workspace/note.rmdoc',
+			metadata: { size: contents.length, mtime: 100 },
+			read: async () => { reads += 1; return contents; },
+			backend: createRendererBackend('reMder-client'),
+		});
+
+		const first = await open();
+		// An eviction sends the next open back to the file, because a reused
+		// fingerprint is only a guess that nothing changed. That read is the one the
+		// render needs anyway, so it is handed on as the snapshot rather than repeated.
+		await fs.rm(first.pdfPath, { force: true });
+		await open();
+		// A hit reads nothing at all.
+		await open();
+
+		assert.equal(renders, 2);
+		assert.equal(reads, 2);
+	} finally {
+		await fs.rm(directory, { recursive: true, force: true });
+	}
+});
+
 test('different client commands targeting one renderer instance are serialized', async () => {
 	const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'remarkable-render-service-serial-'));
 	let releaseFirst = () => {};

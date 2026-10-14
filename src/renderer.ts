@@ -3,6 +3,9 @@ import * as fs from 'node:fs/promises';
 
 const OUTPUT_LIMIT = 16 * 1024;
 
+/** How long a renderer asked to stop gets before it is killed outright. */
+const TERMINATION_GRACE_MS = 5_000;
+
 export interface ProcessResult {
 	exitCode: number | null;
 	signal: NodeJS.Signals | null;
@@ -10,7 +13,18 @@ export interface ProcessResult {
 	stderr: string;
 }
 
-export type ProcessRunner = (executable: string, args: readonly string[]) => Promise<ProcessResult>;
+export type ProcessRunner = (executable: string, args: readonly string[], timeoutMs?: number) => Promise<ProcessResult>;
+
+export interface RenderOptions {
+	/**
+	 * Stop the renderer if it has not finished by then. Without one, a client that
+	 * never returns — a wedged reMder instance, a stuck VM — leaves its promise
+	 * pending forever, which keeps the cache entry in flight, blocks every other
+	 * document behind it in the per-instance queue, and cannot be refreshed out of.
+	 */
+	timeoutMs?: number;
+	runner?: ProcessRunner;
+}
 
 export class RendererError extends Error {
 	public constructor(public readonly summary: string, public readonly result?: ProcessResult) {
@@ -19,8 +33,9 @@ export class RendererError extends Error {
 	}
 }
 
-export async function renderDocument(executable: string, inputPath: string, outputPath: string, runner: ProcessRunner = spawnProcess): Promise<ProcessResult> {
-	const result = await runner(executable, [inputPath, outputPath]);
+export async function renderDocument(executable: string, inputPath: string, outputPath: string, options: RenderOptions = {}): Promise<ProcessResult> {
+	const { runner = spawnProcess, timeoutMs } = options;
+	const result = await runner(executable, [inputPath, outputPath], timeoutMs);
 	if (result.exitCode !== 0) {
 		const status = result.exitCode === null ? `signal ${result.signal ?? 'unknown'}` : `exit code ${result.exitCode}`;
 		const detail = summarizeOutput(result.stderr || result.stdout);
@@ -30,23 +45,39 @@ export async function renderDocument(executable: string, inputPath: string, outp
 }
 
 /** Render an immutable source snapshot so the cache key always describes the rendered bytes. */
-export async function renderSnapshot(executable: string, contents: Uint8Array, outputPath: string, runner: ProcessRunner = spawnProcess): Promise<ProcessResult> {
+export async function renderSnapshot(executable: string, contents: Uint8Array, outputPath: string, options: RenderOptions = {}): Promise<ProcessResult> {
 	const inputPath = `${outputPath}.input.rmdoc`;
 	try {
 		await fs.writeFile(inputPath, contents);
-		return await renderDocument(executable, inputPath, outputPath, runner);
+		return await renderDocument(executable, inputPath, outputPath, options);
 	} finally {
 		await fs.rm(inputPath, { force: true });
 	}
 }
 
-async function spawnProcess(executable: string, args: readonly string[]): Promise<ProcessResult> {
+async function spawnProcess(executable: string, args: readonly string[], timeoutMs?: number): Promise<ProcessResult> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(executable, [...args], { shell: false, windowsHide: true });
 		const stdout: Buffer[] = [];
 		const stderr: Buffer[] = [];
 		let stdoutLength = 0;
 		let stderrLength = 0;
+		let expiry: ReturnType<typeof setTimeout> | undefined;
+		let escalation: ReturnType<typeof setTimeout> | undefined;
+		let expired = false;
+		const stopTimers = () => {
+			if (expiry) { clearTimeout(expiry); }
+			if (escalation) { clearTimeout(escalation); }
+		};
+		if (timeoutMs !== undefined && timeoutMs > 0) {
+			expiry = setTimeout(() => {
+				expired = true;
+				// Asked politely first, so a client that can still unwind gets to tell
+				// its renderer to stop rather than being severed from it.
+				child.kill('SIGTERM');
+				escalation = setTimeout(() => child.kill('SIGKILL'), TERMINATION_GRACE_MS);
+			}, timeoutMs);
+		}
 		child.stdout.on('data', (chunk: Buffer) => {
 			if (stdoutLength < OUTPUT_LIMIT) {
 				stdout.push(chunk.subarray(0, OUTPUT_LIMIT - stdoutLength));
@@ -59,14 +90,30 @@ async function spawnProcess(executable: string, args: readonly string[]): Promis
 				stderrLength += chunk.length;
 			}
 		});
-		child.once('error', error => reject(new RendererError(`Failed to start ${executable}: ${error.message}`)));
-		child.once('close', (exitCode, signal) => resolve({
-			exitCode,
-			signal,
-			stdout: Buffer.concat(stdout).toString('utf8'),
-			stderr: Buffer.concat(stderr).toString('utf8'),
-		}));
+		child.once('error', error => {
+			stopTimers();
+			reject(new RendererError(`Failed to start ${executable}: ${error.message}`));
+		});
+		child.once('close', (exitCode, signal) => {
+			stopTimers();
+			if (expired) {
+				// Said as a timeout rather than as the signal it exited on, which would
+				// read as the renderer having crashed on its own.
+				reject(new RendererError(`${executable} did not finish within ${describeLimit(timeoutMs!)} and was stopped.`));
+				return;
+			}
+			resolve({
+				exitCode,
+				signal,
+				stdout: Buffer.concat(stdout).toString('utf8'),
+				stderr: Buffer.concat(stderr).toString('utf8'),
+			});
+		});
 	});
+}
+
+function describeLimit(timeoutMs: number): string {
+	return timeoutMs >= 1_000 ? `${Math.round(timeoutMs / 1_000)}s` : `${timeoutMs}ms`;
 }
 
 function summarizeOutput(output: string): string {
