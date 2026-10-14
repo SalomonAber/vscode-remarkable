@@ -34980,7 +34980,7 @@
   var defaultScale = "page-width";
   var reportDelayMs = 250;
   var vscode = acquireVsCodeApi();
-  var queued = [];
+  var queued = window.__remarkableInitialPdf ? [{ type: "pdf", uri: window.__remarkableInitialPdf }] : [];
   var deliver = (message) => {
     queued.push(message);
   };

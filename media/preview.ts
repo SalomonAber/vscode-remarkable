@@ -20,14 +20,27 @@ interface ViewState {
 type HostMessage = { type?: string; uri?: string; message?: string };
 
 declare const acquireVsCodeApi: () => { postMessage(message: unknown): void };
-declare global { interface Window { __remarkableWorkerUri: string; __remarkableViewState: ViewState | null } }
+declare global {
+	interface Window {
+		__remarkableWorkerUri: string;
+		__remarkableViewState: ViewState | null;
+		/** Set when a sibling view already had this document rendered; see below. */
+		__remarkableInitialPdf: string | null;
+	}
+}
 
 const status = document.getElementById('status')!;
 const defaultScale = 'page-width';
 const reportDelayMs = 250;
 
 const vscode = acquireVsCodeApi();
-const queued: HostMessage[] = [];
+// A render the host already had sits at the head of the queue rather than arriving
+// as a message, because a message posted while this webview is still loading is
+// dropped. Anything the host posts afterwards queues behind it and, being newer,
+// supersedes it the same way any refresh does.
+const queued: HostMessage[] = window.__remarkableInitialPdf
+	? [{ type: 'pdf', uri: window.__remarkableInitialPdf }]
+	: [];
 let deliver: (message: HostMessage) => void = message => { queued.push(message); };
 let reportTimer: ReturnType<typeof setTimeout> | undefined;
 let pagesReady = false;
