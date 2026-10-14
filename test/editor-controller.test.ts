@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { EditorController, escapeHtml, isIncomingEditorMessage } from '../src/editor-controller';
+import { EditorController, isIncomingEditorMessage } from '../src/editor-controller';
 
 class Sink {
 	public readonly messages: unknown[] = [];
@@ -45,11 +45,4 @@ test('retry and webview messages are strictly validated', () => {
 	assert.equal(isIncomingEditorMessage({ type: 'retry', extra: true }), false);
 	assert.equal(isIncomingEditorMessage({ type: 'pdf', uri: 'file:///etc/passwd' }), false);
 	assert.equal(isIncomingEditorMessage(null), false);
-});
-
-test('HTML-sensitive names are escaped without relying on prior preview state', () => {
-	assert.equal(escapeHtml('<Notes & "draft">'), '&lt;Notes &amp; &quot;draft&quot;&gt;');
-	const restored = new EditorController(); const sink = new Sink(); restored.add(sink);
-	const generation = restored.begin(); restored.pdf(generation, '/cache/reused.pdf');
-	assert.deepEqual(sink.messages, [{ type: 'pdf', uri: '/cache/reused.pdf' }]);
 });

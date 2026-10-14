@@ -22,10 +22,6 @@ export function isIncomingEditorMessage(value: unknown): value is IncomingEditor
 	return message.type === 'viewState' && Object.keys(message).length === 5 && isPreviewViewState(message);
 }
 
-export function escapeHtml(value: string): string {
-	return value.replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]!);
-}
-
 export class EditorController {
 	private readonly views = new Set<EditorSink>();
 	private generation = 0;

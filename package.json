@@ -7,17 +7,13 @@
     "workspace"
   ],
   "engines": {
-    "vscode": "^1.133.0"
+    "vscode": "^1.125.0"
   },
   "categories": [
     "Other"
   ],
   "activationEvents": [
-    "workspaceContains:**/*.rmdoc",
-    "onCommand:remarkablePreview.openPreview",
-    "onCommand:remarkablePreview.openPreviewToSide",
-    "onCommand:remarkablePreview.refreshPreview",
-    "onCommand:remarkablePreview.exportPdf"
+    "workspaceContains:**/*.rmdoc"
   ],
   "main": "./dist/extension.js",
   "contributes": {

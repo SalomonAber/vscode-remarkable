@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { RenderCache } from './cache';
 import { WorkspaceCacheWarmer } from './cache-warmer';
+import { cacheMaxSizeBytes } from './configuration';
 import { SourceFingerprintCache } from './fingerprint';
 import { RemarkableEditorProvider, REMARKABLE_EDITOR_VIEW_TYPE } from './remarkable-editor';
 import { RenderService } from './render-service';
@@ -18,9 +19,9 @@ export function activate(context: vscode.ExtensionContext): void {
 	const cache = new RenderCache(cacheDirectory);
 	const renders = new RenderService(cache, new SourceFingerprintCache());
 	const provider = new RemarkableEditorProvider(context, renders, cacheDirectory, output,
-		protectedPaths => void cleanupCache(cache, protectedPaths, vscode.workspace.getConfiguration('remarkablePreview').get<number>('cacheMaxSizeMB', 500), output));
+		protectedPaths => void cleanupCache(cache, protectedPaths, output));
 	const warmer = new WorkspaceCacheWarmer(renders, output,
-		() => void cleanupCache(cache, provider.activePdfPaths(), vscode.workspace.getConfiguration('remarkablePreview').get<number>('cacheMaxSizeMB', 500), output));
+		() => void cleanupCache(cache, provider.activePdfPaths(), output));
 	const open = async (resource: vscode.Uri | undefined, side: boolean) => {
 		const source = resolveSource(resource);
 		if (!source) { await vscode.window.showErrorMessage('Select or open a .rmdoc file first.'); return; }
@@ -74,12 +75,12 @@ export function activate(context: vscode.ExtensionContext): void {
 			if (event.affectsConfiguration('remarkablePreview.prewarmCache')) { void warmer.scan(); }
 		}),
 	);
-	void cleanupCache(cache, provider.activePdfPaths(), vscode.workspace.getConfiguration('remarkablePreview').get<number>('cacheMaxSizeMB', 500), output);
+	void cleanupCache(cache, provider.activePdfPaths(), output);
 	void warmer.scan();
 }
 
-async function cleanupCache(cache: RenderCache, protectedPaths: ReadonlySet<string>, maxSizeMB: number, output: vscode.OutputChannel): Promise<void> {
-	const removed = await cache.cleanup(Math.max(1, maxSizeMB) * 1024 * 1024, protectedPaths);
+async function cleanupCache(cache: RenderCache, protectedPaths: ReadonlySet<string>, output: vscode.OutputChannel): Promise<void> {
+	const removed = await cache.cleanup(cacheMaxSizeBytes(), protectedPaths);
 	if (removed.length) { output.appendLine(`${new Date().toISOString()} cache cleanup removed ${removed.length} unused PDF(s)`); }
 }
 
