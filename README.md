@@ -21,7 +21,9 @@ Set `remarkablePreview.remderPath` when `reMder-client` is not on `PATH`. This i
 
 Export renders the current source (reusing the cache when it is still valid) and copies the resulting PDF to a location you choose; the cached file itself stays an implementation detail.
 
-The extension also contributes **reMarkable Preview** to **Open With...** for `.rmdoc` files. Each preview remains identified by its source `.rmdoc` tab, including in multiple editor groups. Refresh rerenders the existing preview in place. Open previews are watched; when their source stabilizes after a change, the existing webview updates only when its actual content hash changed.
+The extension also contributes **reMarkable Preview** to **Open With...** for `.rmdoc` files. Each preview remains identified by its source `.rmdoc` tab, including in multiple editor groups. Refresh rerenders the existing preview in place. Open previews are watched; when their source stabilizes after a change, the existing webview updates only when its actual content hash changed — a rerender that lands on identical pages leaves the viewer untouched rather than reloading it, so reading a document on the tablet never disturbs an open preview. Opening a second view of a document already being previewed hands it the current render directly, without putting the first view through a reload.
+
+Watchers are unreliable on some hosts, so previews also poll their source. Polling follows visibility: it stops for a preview whose tab is not on top, and catches up once when the tab comes back.
 
 The preview is PDF.js's viewer component with no chrome of its own: pages scroll in a plain vertical run, links are clickable, text is selectable and searchable with the editor's find command, and only the pages near the viewport are rendered. Pinch or `Ctrl`+scroll to zoom. Each preview remembers its page, scroll offset, and zoom per document, including across restarts.
 
@@ -33,12 +35,15 @@ PDFs are stored under the extension's `globalStorageUri/render-cache` directory 
 
 By default, the extension discovers `.rmdoc` files in the current workspace and warms missing cache entries one at a time in the background. New and changed files are queued automatically. Background failures are written to the output channel and do not interrupt editing; set `remarkablePreview.prewarmCache` to `false` to disable this behavior for a workspace.
 
-Unused cache files are cleaned conservatively after activation and successful renders. The oldest entries are removed first, while active previews and in-flight renders are retained. Cleanup failure never blocks a preview.
+A render that does not finish within `remarkablePreview.renderTimeoutSeconds` is stopped. Renders against one reMder instance run one at a time, so without a limit a client that never returns would hold up every other document and could not be refreshed out of.
+
+Unused cache files are cleaned conservatively after activation and successful renders. The oldest entries are removed first, while active previews and in-flight renders are retained. Cleanup failure never blocks a preview. Because the cache directory is shared by every window of the same VS Code install, scratch left by a killed render is only collected once it has sat untouched for far longer than any render may take — a window cannot tell a peer's render in progress from rubble, and deleting its partial PDF would fail a render that was doing nothing wrong.
 
 ## Configuration
 
 - `remarkablePreview.remderPath` — command or absolute path for `reMder-client` (machine scope).
 - `remarkablePreview.backgroundRemderPath` — optional client connected to a separate reMder instance for background cache warming. The separate instance must use isolated VM state and ports; when unset, background and foreground rendering share the primary instance serially.
+- `remarkablePreview.renderTimeoutSeconds` — how long one `reMder-client` run may take before it is stopped; default `300`, clamped to 10–3600.
 - `remarkablePreview.autoRefresh` — refresh active previews after source changes; default `true`.
 - `remarkablePreview.prewarmCache` — cache workspace previews in the background; default `true`.
 - `remarkablePreview.cacheMaxSizeMB` — maximum unused PDF cache size; default `500` MB.
