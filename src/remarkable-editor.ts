@@ -182,7 +182,13 @@ export class RemarkableEditorProvider implements vscode.CustomReadonlyEditorProv
 			// you merely read a document costs nothing. Reloading the viewer onto
 			// identical pages would hand that saving straight back — and a document
 			// being read on the device restabilises every few seconds.
-			if (!force && state.presented?.contentHash === contentHash) {
+			//
+			// `presented` describes the render the views have, not what they are
+			// showing: a forced refresh this one superseded may have put an overlay
+			// up over it, and that refresh can no longer take it down itself. So
+			// leaving identical pages in place is only an option while they are
+			// actually on screen — otherwise the preview keeps the overlay for good.
+			if (!force && state.presented?.contentHash === contentHash && !state.controller.loadingShown) {
 				this.log('source unchanged; preview left in place', source);
 				return;
 			}

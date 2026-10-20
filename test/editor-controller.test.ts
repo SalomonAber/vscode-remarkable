@@ -36,6 +36,27 @@ test('refresh sends a new PDF to existing previews and failures have stable data
 	]);
 });
 
+test('a superseded refresh leaves its loading overlay for the current render to clear', () => {
+	const controller = new EditorController(); const sink = new Sink(); controller.add(sink);
+	assert.equal(controller.loadingShown, false);
+	// A forced refresh overlays the pages it is about to replace, and a source
+	// change arriving while it renders supersedes it.
+	const forced = controller.begin(); controller.loading();
+	const superseding = controller.begin();
+	assert.equal(controller.pdf(forced, '/cache/stale.pdf'), false);
+	assert.equal(controller.loadingShown, true);
+	assert.equal(controller.pdf(superseding, '/cache/current.pdf'), true);
+	assert.equal(controller.loadingShown, false);
+	assert.deepEqual(sink.messages, [{ type: 'loading' }, { type: 'pdf', uri: '/cache/current.pdf' }]);
+});
+
+test('a failure is a resting state, not an outstanding overlay', () => {
+	const controller = new EditorController(); controller.add(new Sink());
+	const generation = controller.begin(); controller.loading();
+	assert.equal(controller.error(generation, 'renderer exited'), true);
+	assert.equal(controller.loadingShown, false);
+});
+
 test('retry and webview messages are strictly validated', () => {
 	assert.equal(isIncomingEditorMessage({ type: 'retry' }), true);
 	assert.equal(isIncomingEditorMessage({ type: 'openOutput' }), true);

@@ -25,6 +25,7 @@ export function isIncomingEditorMessage(value: unknown): value is IncomingEditor
 export class EditorController {
 	private readonly views = new Set<EditorSink>();
 	private generation = 0;
+	private overlay = false;
 
 	public add(view: EditorSink): () => void {
 		this.views.add(view);
@@ -34,14 +35,24 @@ export class EditorController {
 	public begin(): number { return ++this.generation; }
 	public isCurrent(generation: number): boolean { return generation === this.generation; }
 	public get size(): number { return this.views.size; }
-	public loading(): void { this.broadcast({ type: 'loading' }); }
+	/**
+	 * Whether the views are sitting on the loading overlay with nothing behind it
+	 * yet. Overlays outlive the render that raised one — a refresh superseded
+	 * mid-flight never gets to take its own down — so the render that ends up
+	 * current has to, whatever it concludes about the pages themselves.
+	 */
+	public get loadingShown(): boolean { return this.overlay; }
+	public loading(): void { this.overlay = true; this.broadcast({ type: 'loading' }); }
 	public pdf(generation: number, uri: string): boolean {
 		if (!this.isCurrent(generation)) { return false; }
+		this.overlay = false;
 		this.broadcast({ type: 'pdf', uri });
 		return true;
 	}
 	public error(generation: number, message: string): boolean {
 		if (!this.isCurrent(generation)) { return false; }
+		// The failure screen is itself a resting state, with its own Retry.
+		this.overlay = false;
 		this.broadcast({ type: 'error', message });
 		return true;
 	}
