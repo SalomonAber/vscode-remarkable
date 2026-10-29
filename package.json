@@ -17,6 +17,12 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "remarkablePreview.renderedPdf",
+        "label": "reMarkable Preview"
+      }
+    ],
     "customEditors": [
       {
         "viewType": "remarkablePreview.editor",
@@ -183,6 +189,8 @@
     "serialize-javascript": "^7.0.6"
   },
   "dependencies": {
-    "pdfjs-dist": "5.4.624"
+    "@modelcontextprotocol/server": "^2.4.0",
+    "pdfjs-dist": "5.4.624",
+    "zod": "^4.6.7"
   }
 }

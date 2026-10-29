@@ -5,6 +5,7 @@ import { RenderCache } from './cache';
 import { WorkspaceCacheWarmer } from './cache-warmer';
 import { cacheMaxSizeBytes } from './configuration';
 import { SourceFingerprintCache } from './fingerprint';
+import { REMARKABLE_MCP_PROVIDER_ID, RemarkableMcpServerDefinitionProvider } from './mcp-provider';
 import { RemarkableEditorProvider, REMARKABLE_EDITOR_VIEW_TYPE } from './remarkable-editor';
 import { RenderService } from './render-service';
 
@@ -18,6 +19,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	const cacheDirectory = getCacheDirectory(context);
 	const cache = new RenderCache(cacheDirectory);
 	const renders = new RenderService(cache, new SourceFingerprintCache());
+	const mcpProvider = new RemarkableMcpServerDefinitionProvider(context, cacheDirectory);
 	const provider = new RemarkableEditorProvider(context, renders, cacheDirectory, output,
 		protectedPaths => void cleanupCache(cache, protectedPaths, output));
 	const warmer = new WorkspaceCacheWarmer(renders, output,
@@ -63,17 +65,20 @@ export function activate(context: vscode.ExtensionContext): void {
 		const action = await vscode.window.showInformationMessage(`Exported ${path.basename(target.path)}.`, 'Open');
 		if (action) { await vscode.commands.executeCommand('vscode.open', target); }
 	};
-	context.subscriptions.push(output, provider, warmer,
+	context.subscriptions.push(output, provider, warmer, mcpProvider,
 		vscode.window.registerCustomEditorProvider(REMARKABLE_EDITOR_VIEW_TYPE, provider, { webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: true }),
+		vscode.lm.registerMcpServerDefinitionProvider(REMARKABLE_MCP_PROVIDER_ID, mcpProvider),
 		vscode.commands.registerCommand(OPEN_PREVIEW, (resource?: vscode.Uri) => open(resource, false)),
 		vscode.commands.registerCommand(OPEN_PREVIEW_TO_SIDE, (resource?: vscode.Uri) => open(resource, true)),
 		vscode.commands.registerCommand(REFRESH_PREVIEW, refresh),
 		vscode.commands.registerCommand(EXPORT_PDF, (resource?: vscode.Uri) => exportPdf(resource)),
 		vscode.workspace.onDidChangeConfiguration(event => {
-			if (event.affectsConfiguration('remarkablePreview.remderPath')) { void warmer.scan(); }
+			if (event.affectsConfiguration('remarkablePreview.remderPath')) { void warmer.scan(); mcpProvider.refresh(); }
+			if (event.affectsConfiguration('remarkablePreview.renderTimeoutSeconds')) { mcpProvider.refresh(); }
 			if (event.affectsConfiguration('remarkablePreview.backgroundRemderPath')) { void warmer.scan(); }
 			if (event.affectsConfiguration('remarkablePreview.prewarmCache')) { void warmer.scan(); }
 		}),
+		vscode.workspace.onDidChangeWorkspaceFolders(() => mcpProvider.refresh()),
 	);
 	void cleanupCache(cache, provider.activePdfPaths(), output);
 	void warmer.scan();

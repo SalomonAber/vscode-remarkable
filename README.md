@@ -29,6 +29,12 @@ The preview is PDF.js's viewer component with no chrome of its own: pages scroll
 
 The preview uses a restrictive webview policy: PDF.js and its worker are bundled with the extension, resources are exposed through VS Code webview URIs, and no network/CDN resources are used. In Remote SSH and similar windows the source, renderer, and cache remain on the remote extension host; VS Code transports the webview resources to the local UI.
 
+## MCP server
+
+The extension publishes a bundled **reMarkable Preview** MCP server to VS Code. Its `view_remarkable_pdf` tool accepts an absolute path, file URI, or workspace-relative path to a `.rmdoc` and returns the rendered document as an embedded `application/pdf` resource. Documents outside the current file-backed workspace are rejected.
+
+The tool goes through the same canonical content hash and `globalStorageUri/render-cache` directory as the editor and cache warmer. A document already previewed or prewarmed is therefore served directly from the existing cache; a cache miss invokes the configured `remarkablePreview.remderPath` and observes `remarkablePreview.renderTimeoutSeconds`. No PDF-to-text or page-image conversion is performed—the consuming MCP client receives the PDF itself.
+
 ## Cache
 
 PDFs are stored under the extension's `globalStorageUri/render-cache` directory when it is file-backed. VS Code builds that expose virtual extension storage use `$XDG_CACHE_HOME/vscode-remarkable/render-cache` (or `~/.cache/vscode-remarkable/render-cache`) instead. Keys are a canonical hash of the `.rmdoc` bundle and nothing else. The canonical hash covers the page strokes and any imported PDF/EPUB, with zip packing details and the bookkeeping the tablet rewrites as you read — saved zoom and scroll viewport, last-used pen, open timestamps, generated thumbnails — excluded, so reading a document on the device does not invalidate its render. The renderer deliberately does not contribute to the key: `reMder-client` is a generated wrapper script whose bytes change whenever one of its dependencies is rebuilt, so including it discarded the whole cache on days when nothing about rendering had changed. Use **reMarkable: Refresh Preview** to re-render a document after a renderer change that does affect its output. A per-session fingerprint cache avoids rehashing a source when its size and modification time are unchanged; those metadata values are never used as the render cache key. Rendering writes `<key>.pdf.tmp` and atomically renames it only after successful completion.

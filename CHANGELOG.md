@@ -7,3 +7,4 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ## [Unreleased]
 
 - Initial release
+- Publish a bundled MCP server that returns cached reMarkable renders as embedded PDFs.

@@ -25,7 +25,7 @@
             pname = "vscode-remarkable-vsix";
             inherit version;
             src = self;
-            npmDepsHash = "sha256-OjoX+6fT109laSKuZ9kBGRef48fhTmxqhVxL7UTZHpU=";
+            npmDepsHash = "sha256-kGekMMokhC+y3fGIbbhhyK93pyarcm5wthNNWjBXgpE=";
             nativeBuildInputs = [ pkgs.vsce ];
             buildPhase = ''
               runHook preBuild
