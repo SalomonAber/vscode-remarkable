@@ -1,5 +1,6 @@
 {
   "name": "vscode-remarkable",
+  "publisher": "salomonaber",
   "displayName": "reMarkable Preview",
   "description": "Preview local reMarkable documents as cached PDFs rendered by reMder.",
   "version": "0.0.1",

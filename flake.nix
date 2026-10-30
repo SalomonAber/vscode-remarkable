@@ -42,9 +42,9 @@
             pname = "vscode-remarkable";
             inherit version;
             src = "${vsix}/vscode-remarkable-${version}.vsix";
-            vscodeExtPublisher = "undefined";
+            vscodeExtPublisher = "salomonaber";
             vscodeExtName = "vscode-remarkable";
-            vscodeExtUniqueId = "undefined.vscode-remarkable";
+            vscodeExtUniqueId = "salomonaber.vscode-remarkable";
           };
         }
       );
